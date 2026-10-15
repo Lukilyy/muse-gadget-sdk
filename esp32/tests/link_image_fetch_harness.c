@@ -309,7 +309,7 @@ static void fetch(const char *url) {
     g_done = false;
     g_rows_drawn = 0;
     g_deadline_hint_us = g_now_us + 60 * 1000000LL;
-    CHECK(image_fetch_start(url, 0, on_done, NULL, &code, &message),
+    CHECK(image_fetch_start(url, 0, IMAGE_FIT_CONTAIN, on_done, NULL, &code, &message),
           "start %s refused: %s", url, message ? message : "");
     CHECK(g_done, "download did not finish");
 }
