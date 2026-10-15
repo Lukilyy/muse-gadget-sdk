@@ -96,6 +96,9 @@ typedef struct {
     bool scheme_changed;
     // JPEG output placement and one MCU converted for the panel.
     int x0, y0;
+    image_fit_t fit;
+    // FILL mode: centre-crop window, in decoded-image coordinates.
+    int crop_x, crop_y;
     uint16_t mcu[JPEG_MCU_PIXELS];
 } fetch_t;
 
@@ -229,14 +232,30 @@ static UINT jpeg_in(JDEC *jd, BYTE *buf, UINT len) {
 
 static UINT jpeg_out(JDEC *jd, void *bitmap, JRECT *rect) {
     fetch_t *f = jd->device;
-    int w = rect->right - rect->left + 1;
-    int h = rect->bottom - rect->top + 1;
-    const uint8_t *rgb = bitmap;
-    for (int i = 0; i < w * h; i++, rgb += 3) {
-        uint16_t px = ((rgb[0] & 0xF8) << 8) | ((rgb[1] & 0xFC) << 3) | (rgb[2] >> 3);
-        f->mcu[i] = (uint16_t)((px >> 8) | (px << 8));
+    int rl = rect->left, rt = rect->top, rr = rect->right, rb = rect->bottom;
+    int stride = rr - rl + 1;
+    int ox = 0, oy = 0;  // clipped region's offset inside this MCU rect
+    if (f->fit == IMAGE_FIT_FILL) {
+        int cx0 = f->crop_x, cy0 = f->crop_y;
+        int cx1 = cx0 + f->width - 1, cy1 = cy0 + (f->height - TOP_ROW(f)) - 1;
+        if (rr < cx0 || rl > cx1 || rb < cy0 || rt > cy1) return 1;  // fully outside
+        if (rl < cx0) { ox = cx0 - rl; rl = cx0; }
+        if (rt < cy0) { oy = cy0 - rt; rt = cy0; }
+        if (rr > cx1) rr = cx1;
+        if (rb > cy1) rb = cy1;
     }
-    return led_status_draw_rect(f->x0 + rect->left, f->y0 + rect->top, w, h, f->mcu);
+    int w = rr - rl + 1, h = rb - rt + 1;
+    const uint8_t *row_in = (const uint8_t *)bitmap + (oy * stride + ox) * 3;
+    for (int y = 0; y < h; y++, row_in += stride * 3) {
+        const uint8_t *rgb = row_in;
+        for (int x = 0; x < w; x++, rgb += 3) {
+            uint16_t px = ((rgb[0] & 0xF8) << 8) | ((rgb[1] & 0xFC) << 3) | (rgb[2] >> 3);
+            f->mcu[y * w + x] = (uint16_t)((px >> 8) | (px << 8));
+        }
+    }
+    int dx = f->x0 + rl - (f->fit == IMAGE_FIT_FILL ? f->crop_x : 0);
+    int dy = f->y0 + rt - (f->fit == IMAGE_FIT_FILL ? f->crop_y : 0);
+    return led_status_draw_rect(dx, dy, w, h, f->mcu);
 }
 
 static const char *draw_jpeg(fetch_t *f, int *out_w, int *out_h, int *out_scale) {
@@ -246,23 +265,41 @@ static const char *draw_jpeg(fetch_t *f, int *out_w, int *out_h, int *out_scale)
     JDEC jd;
     JRESULT rc = jd_prepare(&jd, jpeg_in, pool, JPEG_POOL_BYTES, f);
     if (rc == JDR_OK) {
-        // Shrink by the smallest power of two that fits below `row`.
         int avail = f->height - TOP_ROW(f);
         uint8_t scale = 0;
-        while (scale < 3 && ((int)(jd.width >> scale) > f->width
-                             || (int)(jd.height >> scale) > avail)) {
-            scale++;
-        }
-        int w = (int)(jd.width >> scale), h = (int)(jd.height >> scale);
-        *out_w = w;
-        *out_h = h;
-        *out_scale = 1 << scale;
-        if (w > f->width || h > avail) {
-            err = "JPEG is too large even at 1/8 scale";
-        } else {
-            f->x0 = (f->width - w) / 2;
-            f->y0 = CENTRED(f) ? (f->height - h) / 2 : f->row;
+        if (f->fit == IMAGE_FIT_FILL && (int)jd.width >= f->width && (int)jd.height >= avail) {
+            // Cover scale: smallest decoded image that still covers the panel,
+            // then centre-crop 1:1 in jpeg_out. No resampling, no distortion.
+            while (scale < 3 && (int)(jd.width >> (scale + 1)) >= f->width
+                             && (int)(jd.height >> (scale + 1)) >= avail) {
+                scale++;
+            }
+            int w = (int)(jd.width >> scale), h = (int)(jd.height >> scale);
+            f->crop_x = (w - f->width) / 2;
+            f->crop_y = (h - avail) / 2;
+            f->x0 = 0;
+            f->y0 = TOP_ROW(f);
+            *out_w = f->width;
+            *out_h = avail;
+            *out_scale = 1 << scale;
             rc = jd_decomp(&jd, jpeg_out, scale);
+        } else {
+            // Shrink by the smallest power of two that fits below `row`.
+            while (scale < 3 && ((int)(jd.width >> scale) > f->width
+                                 || (int)(jd.height >> scale) > avail)) {
+                scale++;
+            }
+            int w = (int)(jd.width >> scale), h = (int)(jd.height >> scale);
+            *out_w = w;
+            *out_h = h;
+            *out_scale = 1 << scale;
+            if (w > f->width || h > avail) {
+                err = "JPEG is too large even at 1/8 scale";
+            } else {
+                f->x0 = (f->width - w) / 2;
+                f->y0 = CENTRED(f) ? (f->height - h) / 2 : f->row;
+                rc = jd_decomp(&jd, jpeg_out, scale);
+            }
         }
     }
     if (!err && rc != JDR_OK) {
@@ -395,7 +432,7 @@ static void fetch_task(void *arg) {
     vTaskDelete(NULL);
 }
 
-bool image_fetch_start(const char *url, int row, image_fetch_done_cb done,
+bool image_fetch_start(const char *url, int row, image_fit_t fit, image_fetch_done_cb done,
                        void *user, const char **code, const char **message) {
     int width, height;
     if (!led_status_display_info(&width, &height)) {
@@ -446,6 +483,7 @@ bool image_fetch_start(const char *url, int row, image_fetch_done_cb done,
     }
     f->https = https;
     f->row = row;
+    f->fit = fit;
     f->done = done;
     f->user = user;
     f->width = width;
@@ -463,10 +501,11 @@ bool image_fetch_start(const char *url, int row, image_fetch_done_cb done,
 
 #else
 
-bool image_fetch_start(const char *url, int row, image_fetch_done_cb done,
+bool image_fetch_start(const char *url, int row, image_fit_t fit, image_fetch_done_cb done,
                        void *user, const char **code, const char **message) {
     (void)url;
     (void)row;
+    (void)fit;
     (void)done;
     (void)user;
     *code = "unsupported";
