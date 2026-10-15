@@ -1885,8 +1885,15 @@ static cJSON *on_ws_command(
     if (strcmp(command, "display.draw_url") == 0) {
         cJSON *url = cJSON_GetObjectItem(params, "url");
         cJSON *row = cJSON_GetObjectItem(params, "row");
+        cJSON *fit = cJSON_GetObjectItem(params, "fit");
         if (!cJSON_IsString(url) || !url->valuestring || !url->valuestring[0]) {
             return command_error("missing_param", "url is required");
+        }
+        image_fit_t fit_mode = IMAGE_FIT_CONTAIN;
+        if (cJSON_IsString(fit) && fit->valuestring) {
+            if (strcmp(fit->valuestring, "fill") == 0) fit_mode = IMAGE_FIT_FILL;
+            else if (strcmp(fit->valuestring, "contain") == 0) fit_mode = IMAGE_FIT_CONTAIN;
+            else return command_error("invalid_param", "fit must be \"fill\" or \"contain\"");
         }
         draw_url_ctx_t *ctx = calloc(1, sizeof(*ctx));
         if (!ctx) return command_error("out_of_memory", "failed to allocate");
@@ -1894,7 +1901,7 @@ static cJSON *on_ws_command(
         strncpy(ctx->request_id, request_id, sizeof(ctx->request_id) - 1);
         const char *code, *message;
         if (!image_fetch_start(url->valuestring, cJSON_IsNumber(row) ? row->valueint : IMAGE_FETCH_DEFAULT_ROW,
-                               draw_url_done, ctx, &code, &message)) {
+                               fit_mode, draw_url_done, ctx, &code, &message)) {
             free(ctx);
             return command_error(code, message);
         }
