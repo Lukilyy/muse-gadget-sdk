@@ -38,6 +38,12 @@ typedef struct {
 
 typedef void (*image_fetch_done_cb)(const image_fetch_result_t *result, void *user);
 
+// How a JPEG is fitted to the panel before drawing.
+typedef enum {
+    IMAGE_FIT_CONTAIN = 0,  // shrink to fit inside, centred (default, current behaviour)
+    IMAGE_FIT_FILL = 1,     // centre-crop to cover the panel, 1:1 pixels, no distortion
+} image_fit_t;
+
 // `row` for a JPEG centred down the screen, on boards with the full UI only.
 #define IMAGE_FETCH_CENTRE (-1)
 
@@ -50,9 +56,12 @@ typedef void (*image_fetch_done_cb)(const image_fetch_result_t *result, void *us
 #endif
 
 // Download an image over HTTP(S) and draw it as it arrives, starting at
-// `row`, with the status on top. Takes a baseline JPEG, shrunk 1/2, 1/4 or
-// 1/8 as needed to fit and centred across, or raw RGB565 (high byte first)
-// in whole screen-width rows. On boards with the full UI, `row` may also be
+// `row`, with the status on top. Takes a baseline JPEG, or raw RGB565 (high
+// byte first) in whole screen-width rows. A JPEG is shrunk 1/2, 1/4 or 1/8 as
+// needed: with IMAGE_FIT_CONTAIN it is fitted inside and centred across;
+// with IMAGE_FIT_FILL it is decoded at the smallest scale that still covers
+// the panel and centre-cropped 1:1 (falls back to CONTAIN when the source is
+// smaller than the panel). On boards with the full UI, `row` may also be
 // IMAGE_FETCH_CENTRE, which centres a JPEG down the screen (raw data starts at
 // the top). E-paper shows it once it is all in. One download runs at a time,
 // on its own task, and only when there is memory to spare.
@@ -60,7 +69,7 @@ typedef void (*image_fetch_done_cb)(const image_fetch_result_t *result, void *us
 // Returns false with `code`/`message` set if the download cannot start
 // (busy, low memory, no display); otherwise `done` runs later on the
 // download task.
-bool image_fetch_start(const char *url, int row, image_fetch_done_cb done,
+bool image_fetch_start(const char *url, int row, image_fit_t fit, image_fetch_done_cb done,
                        void *user, const char **code, const char **message);
 
 #ifdef __cplusplus

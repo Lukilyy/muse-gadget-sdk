@@ -68,6 +68,12 @@ set(GADGET_REQUIRES
     esp_driver_ledc
     esp_driver_spi
     esp_driver_uart
+    # esp_adc is required unconditionally (not Kconfig-gated): component
+    # REQUIRES are snapshotted before Kconfig symbols are available in
+    # the multi-pass CMake configure, so a conditional append here would
+    # silently have no effect. battery_adc.c itself is still only
+    # compiled when CONFIG_HOMEHUB_BATTERY_ADC_ENABLED is set.
+    esp_adc
     esp_lcd
     lwip
     mbedtls
@@ -85,6 +91,8 @@ if(CONFIG_HOMEHUB_LED_BACKEND_RETERMINAL_UC8179)
     list(APPEND GADGET_SRCS "epaper_status.c" "epd_uc8179.c")
 elseif(CONFIG_HOMEHUB_LED_BACKEND_RETERMINAL_SPECTRA6)
     list(APPEND GADGET_SRCS "epaper_status.c" "epd_spectra6.c")
+elseif(CONFIG_HOMEHUB_LED_BACKEND_STICKY_SSD1677)
+    list(APPEND GADGET_SRCS "epaper_status.c" "epd_ssd1677.c")
 elseif(CONFIG_HOMEHUB_LED_BACKEND_WAVESHARE_SSD1681)
     list(APPEND GADGET_SRCS "epaper_status.c" "epd_ssd1681.c")
 else()
@@ -104,6 +112,14 @@ if(CONFIG_HOMEHUB_SENSECAP_SENSORS)
 endif()
 if(CONFIG_HOMEHUB_RETERMINAL_SHT4X)
     list(APPEND GADGET_SRCS "reterminal_sht4x.c")
+endif()
+
+if(CONFIG_HOMEHUB_SHT40_ENABLED)
+    list(APPEND GADGET_SRCS "sht40.c")
+endif()
+
+if(CONFIG_HOMEHUB_BATTERY_ADC_ENABLED)
+    list(APPEND GADGET_SRCS "battery_adc.c")
 endif()
 
 if(CONFIG_HOMEHUB_VOICE)
