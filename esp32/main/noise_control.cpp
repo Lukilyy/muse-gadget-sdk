@@ -44,8 +44,10 @@
 
 extern "C" {
 #include "cJSON.h"
+#include "battery_adc.h"
 #include "led_status.h"
 #include "ota.h"
+#include "sht40.h"
 #if CONFIG_MUSE_ENABLED
 extern "C" {
 #include "muse_state.h"
@@ -1362,7 +1364,9 @@ static char *build_register_json(void) {
     add_command(commands, "device.health",
                 "Report basic Link health, including battery level (percent), "
                 "voltage, and whether it is charging or on USB power; each is "
-                "null when the device has no battery or can't measure it",
+                "null when the device has no battery or can't measure it. "
+                "Boards with an SHT40 sensor also report temp_c (Celsius) and "
+                "humidity_pct (null when unavailable)",
                 nullptr, nullptr);
 #if CONFIG_HOMEHUB_TUNNEL
     add_command(commands, "device.discover",
@@ -1379,7 +1383,7 @@ static char *build_register_json(void) {
         // and, for e-paper, the exact inks.
         int bits = led_status_display_bits();
         bool mono = bits == 1;
-        bool epaper = bits == 1 || bits == 4;
+        bool epaper = bits == 1 || bits == 2 || bits == 4;
         char desc[1536];
         snprintf(desc, sizeof(desc),
                  "Download an image and draw it on the %dx%d %s. Takes a "
@@ -1400,7 +1404,8 @@ static char *build_register_json(void) {
                  mono ? "black and white e-paper screen, 1 bit per pixel"
                  : bits == 4 ? "six-colour e-paper screen (E Ink Spectra 6), "
                                "4 bits per pixel"
-                             : "colour screen, 16 bits per pixel (RGB565)",
+                             : bits == 2 ? "four-level grayscale e-paper screen, 2 bits per pixel"
+                                         : "colour screen, 16 bits per pixel (RGB565)",
                  disp_w * 2,
                  mono ? " The screen has no gray or colour: the device "
                         "dithers them to black and white dots, so photos "
@@ -1422,7 +1427,11 @@ static char *build_register_json(void) {
                                "screen rather than several parts, at most "
                                "about once a minute. The image stays on "
                                "screen without power."
-                             : ""
+                             : bits == 2 ? " Images are quantized to four gray levels. "
+                                           "The panel refreshes the whole image at once and retains "
+                                           "it without power; send one whole screen rather than "
+                                           "several parts."
+                                         : ""
 #if !CONFIG_HOMEHUB_LED_BACKEND_MUSE
                  , epaper ? "status screen" : "animation"
 #endif
@@ -1637,6 +1646,21 @@ static void send_device_health(
     }
     usb_power = cJSON_CreateBool(power.usb);
 #endif
+#if CONFIG_HOMEHUB_BATTERY_ADC_ENABLED
+    int batt_mv = 0, batt_pct = 0;
+    if (battery_adc_read(&batt_mv, &batt_pct)) {
+        if (battery_pct) {
+            cJSON_Delete(battery_pct);
+            battery_pct = nullptr;
+        }
+        if (battery_mv) {
+            cJSON_Delete(battery_mv);
+            battery_mv = nullptr;
+        }
+        battery_pct = cJSON_CreateNumber(batt_pct);
+        battery_mv = cJSON_CreateNumber(batt_mv);
+    }
+#endif
     cJSON_AddItemToObject(metrics, "battery_pct",
                           battery_pct ? battery_pct : cJSON_CreateNull());
     cJSON_AddItemToObject(metrics, "battery_mv",
@@ -1645,6 +1669,16 @@ static void send_device_health(
                           charging ? charging : cJSON_CreateNull());
     cJSON_AddItemToObject(metrics, "usb_power",
                           usb_power ? usb_power : cJSON_CreateNull());
+#if CONFIG_HOMEHUB_SHT40_ENABLED
+    float sht_temp_c = 0, sht_humidity_pct = 0;
+    if (sht40_read(&sht_temp_c, &sht_humidity_pct)) {
+        cJSON_AddNumberToObject(metrics, "temp_c", sht_temp_c);
+        cJSON_AddNumberToObject(metrics, "humidity_pct", sht_humidity_pct);
+    } else {
+        cJSON_AddNullToObject(metrics, "temp_c");
+        cJSON_AddNullToObject(metrics, "humidity_pct");
+    }
+#endif
     cJSON_AddItemToObject(health, "metrics", metrics);
     if (wifi_ssid[0]) {
         cJSON_AddStringToObject(health, "network_ssid", wifi_ssid);
