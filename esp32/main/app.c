@@ -15,6 +15,10 @@
  */
 
 #include "app.h"
+#include "sdkconfig.h"
+#if CONFIG_HOMEHUB_RETERMINAL_E100X_HARDWARE
+#include "e1002_hardware.h"
+#endif
 #include "stack_monitor.h"
 
 #include <string.h>
@@ -1550,6 +1554,7 @@ static void discover_task(void *arg) {
 typedef struct {
     noise_ctrl_session_generation_t session_generation;
     char request_id[64];
+    bool gray4;
 } draw_url_ctx_t;
 
 static void draw_url_done(const image_fetch_result_t *r, void *user) {
@@ -1564,6 +1569,7 @@ static void draw_url_done(const image_fetch_result_t *r, void *user) {
         cJSON_AddNumberToObject(payload, "scale", r->scale);
         cJSON_AddNumberToObject(payload, "bytes", (double)r->bytes);
         cJSON_AddNumberToObject(payload, "ms", r->ms);
+        if (ctx->gray4) cJSON_AddNumberToObject(payload, "gray_levels", 4);
     } else {
         cJSON *error = cJSON_AddObjectToObject(result, "error");
         cJSON_AddStringToObject(error, "code", r->code);
@@ -1863,6 +1869,11 @@ static cJSON *bug_report_command(
 static cJSON *on_ws_command(
     const char *command, cJSON *params, const char *request_id,
     noise_ctrl_session_generation_t session_generation) {
+#if CONFIG_HOMEHUB_RETERMINAL_E100X_HARDWARE
+    if (e1002_hardware_handles(command)) {
+        return e1002_hardware_command(command, params, request_id, session_generation);
+    }
+#endif
 #if CONFIG_HOMEHUB_BLE_COMMANDS
     if (ble_commands_handles(command)) {
         return ble_commands_handle(command, params, request_id, session_generation);
@@ -1877,7 +1888,11 @@ static cJSON *on_ws_command(
         return queue_ws_control(WS_CONTROL_SET_VM, url);
     }
 #if CONFIG_HOMEHUB_DISPLAY_COMMANDS
-    if (strcmp(command, "display.draw_url") == 0) {
+    if (strcmp(command, "display.draw_url") == 0
+#if CONFIG_HOMEHUB_LED_BACKEND_RETERMINAL_UC8179
+        || strcmp(command, "display.draw_gray4_url") == 0
+#endif
+    ) {
         cJSON *url = cJSON_GetObjectItem(params, "url");
         cJSON *row = cJSON_GetObjectItem(params, "row");
         if (!cJSON_IsString(url) || !url->valuestring || !url->valuestring[0]) {
@@ -1888,8 +1903,16 @@ static cJSON *on_ws_command(
         ctx->session_generation = session_generation;
         strncpy(ctx->request_id, request_id, sizeof(ctx->request_id) - 1);
         const char *code, *message;
-        if (!image_fetch_start(url->valuestring, cJSON_IsNumber(row) ? row->valueint : IMAGE_FETCH_DEFAULT_ROW,
-                               draw_url_done, ctx, &code, &message)) {
+        bool gray4 = strcmp(command, "display.draw_gray4_url") == 0;
+        ctx->gray4 = gray4;
+        bool started = gray4
+            ? image_fetch_start_gray4(url->valuestring,
+                                      cJSON_IsNumber(row) ? row->valueint : IMAGE_FETCH_DEFAULT_ROW,
+                                      draw_url_done, ctx, &code, &message)
+            : image_fetch_start(url->valuestring,
+                                cJSON_IsNumber(row) ? row->valueint : IMAGE_FETCH_DEFAULT_ROW,
+                                draw_url_done, ctx, &code, &message);
+        if (!started) {
             free(ctx);
             return command_error(code, message);
         }
@@ -2610,6 +2633,9 @@ void app_run(void) {
     sdk_token_console_start();
 #endif
 
+#if CONFIG_HOMEHUB_RETERMINAL_E100X_HARDWARE
+    e1002_hardware_prepare_display();
+#endif
     if (!led_status_init()) {
         ESP_LOGW(TAG, "LED init failed — continuing without status LED");
     }
@@ -2739,6 +2765,9 @@ void app_run(void) {
 #endif
 #if CONFIG_HOMEHUB_RETERMINAL_SHT4X
     reterminal_sht4x_init();
+#endif
+#if CONFIG_HOMEHUB_RETERMINAL_E100X_HARDWARE
+    e1002_hardware_init();
 #endif
 
     if (!setup_complete) {

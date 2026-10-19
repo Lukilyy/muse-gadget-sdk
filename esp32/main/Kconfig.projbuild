@@ -480,6 +480,15 @@ menu "ESP32 Device SDK"
             temperature and humidity need the Grove AHT20. Needs Seeed's stock
             RP2040 firmware.
 
+    config HOMEHUB_RETERMINAL_E100X_HARDWARE
+        bool "reTerminal E1001/E1002 hardware command interfaces"
+        depends on HOMEHUB_LED_BACKEND_RETERMINAL_UC8179 || HOMEHUB_LED_BACKEND_RETERMINAL_SPECTRA6
+        default n
+        help
+            Expose the E1001/E1002 V1.2 buttons and events, FAT SD storage, PCF8563
+            RTC, buzzer, battery ADC and on-demand PDM microphone capture.
+            No picture lists, local button actions or periodic display tasks.
+
     config HOMEHUB_RETERMINAL_SHT4X
         bool "reTerminal E100x onboard SHT4x sensor (sensors.read)"
         depends on HOMEHUB_LED_BACKEND_RETERMINAL_UC8179 || HOMEHUB_LED_BACKEND_RETERMINAL_SPECTRA6

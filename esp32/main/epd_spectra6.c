@@ -116,7 +116,11 @@ static esp_err_t spectra6_init(void) {
     const spi_bus_config_t bus = {
         .sclk_io_num = EPD_PIN_SCLK,
         .mosi_io_num = EPD_PIN_MOSI,
+#if CONFIG_HOMEHUB_RETERMINAL_E100X_HARDWARE
+        .miso_io_num = 8, // SD shares SPI2 with the panel.
+#else
         .miso_io_num = -1,
+#endif
         .quadwp_io_num = -1,
         .quadhd_io_num = -1,
         .max_transfer_sz = EPD_CHUNK_BYTES,

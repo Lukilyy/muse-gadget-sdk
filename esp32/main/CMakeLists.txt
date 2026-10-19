@@ -79,6 +79,10 @@ set(GADGET_REQUIRES
     # is loaded, so this is unconditional; unused code is not linked.
     esp_driver_i2s
     esp_driver_pcnt
+    esp_adc
+    fatfs
+    esp_driver_sdspi
+    sdmmc
 )
 
 # E-paper has its own status screen in place of led_status.c, with
@@ -91,6 +95,12 @@ elseif(CONFIG_HOMEHUB_LED_BACKEND_WAVESHARE_SSD1681)
     list(APPEND GADGET_SRCS "epaper_status.c" "epd_ssd1681.c")
 else()
     list(APPEND GADGET_SRCS "led_status.c")
+endif()
+
+if(CONFIG_HOMEHUB_RETERMINAL_E100X_HARDWARE)
+    list(APPEND GADGET_SRCS "e1002_hardware.c" "e1002_i2c.c"
+        "e1002_rtc.c" "e1002_buttons.c" "e1002_buzzer.c"
+        "e1002_sd.c" "e1002_events.c" "e1002_microphone.c" "battery_adc.c")
 endif()
 
 if(CONFIG_MUSE_ENABLED)

@@ -15,6 +15,10 @@
  */
 
 #include "reterminal_sht4x.h"
+#include "sdkconfig.h"
+#if CONFIG_HOMEHUB_RETERMINAL_E100X_HARDWARE
+#include "e1002_i2c.h"
+#endif
 
 #include <math.h>
 #include <stdbool.h>
@@ -184,6 +188,10 @@ static void sensors_task(void *arg) {
 }
 
 void reterminal_sht4x_init(void) {
+#if CONFIG_HOMEHUB_RETERMINAL_E100X_HARDWARE
+    i2c_master_bus_handle_t bus = e1002_i2c_bus_get();
+    esp_err_t err = bus ? ESP_OK : ESP_ERR_INVALID_STATE;
+#else
     i2c_master_bus_config_t bus_cfg = {
         .i2c_port = -1,
         .sda_io_num = SHT4X_SDA_GPIO,
@@ -194,6 +202,7 @@ void reterminal_sht4x_init(void) {
     };
     i2c_master_bus_handle_t bus = NULL;
     esp_err_t err = i2c_new_master_bus(&bus_cfg, &bus);
+#endif
     if (err == ESP_OK && i2c_master_probe(bus, SHT4X_ADDR, 100) != ESP_OK) {
         err = ESP_ERR_NOT_FOUND;
     }
@@ -205,7 +214,9 @@ void reterminal_sht4x_init(void) {
     if (err == ESP_OK) err = i2c_master_bus_add_device(bus, &dev_cfg, &s_dev);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "no SHT4x at 0x%02x: %s", SHT4X_ADDR, esp_err_to_name(err));
+#if !CONFIG_HOMEHUB_RETERMINAL_E100X_HARDWARE
         if (bus) i2c_del_master_bus(bus);
+#endif
         return;
     }
     if (xTaskCreate(sensors_task, "sht4x", 3072, NULL, 2, NULL) != pdPASS) {

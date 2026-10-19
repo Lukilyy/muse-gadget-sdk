@@ -85,6 +85,7 @@ typedef struct {
     // may not change it: TLS on the HTTP stack overflows it, and an HTTPS
     // fetch must not continue in cleartext.
     bool https;
+    bool gray4;
     int64_t deadline_us;
     // Two bytes read to sniff the format, handed back to the first read.
     uint8_t peek[2];
@@ -99,9 +100,9 @@ typedef struct {
     uint16_t mcu[JPEG_MCU_PIXELS];
 } fetch_t;
 
-// Boards with the full UI also take IMAGE_FETCH_CENTRE, which centres a JPEG down the
-// screen and starts raw data at the top. The display backends don't.
-#if CONFIG_HOMEHUB_LED_BACKEND_MUSE
+// Muse UI and E1002 take IMAGE_FETCH_CENTRE, which centres a JPEG down the
+// screen and starts raw data at the top.
+#if CONFIG_HOMEHUB_LED_BACKEND_MUSE || CONFIG_HOMEHUB_LED_BACKEND_RETERMINAL_SPECTRA6
 #define CENTRED(f) ((f)->row == IMAGE_FETCH_CENTRE)
 #define MIN_ROW    IMAGE_FETCH_CENTRE
 #else
@@ -180,6 +181,8 @@ static const char *draw_raw(fetch_t *f, int *rows_drawn) {
     if (!buf) return "out of memory";
     const char *err = NULL;
     int y = TOP_ROW(f);
+    if (f->gray4) led_status_draw_begin_gray4();
+    else led_status_draw_begin();
     for (;;) {
         int n = fetch_read(f, buf, RAW_ROWS * row_bytes);
         if (n < 0) {
@@ -262,6 +265,8 @@ static const char *draw_jpeg(fetch_t *f, int *out_w, int *out_h, int *out_scale)
         } else {
             f->x0 = (f->width - w) / 2;
             f->y0 = CENTRED(f) ? (f->height - h) / 2 : f->row;
+            if (f->gray4) led_status_draw_begin_gray4();
+            else led_status_draw_begin();
             rc = jd_decomp(&jd, jpeg_out, scale);
         }
     }
@@ -366,7 +371,7 @@ static void fetch_task(void *arg) {
             result.height = rows;
         }
         // Show what arrived, even if the download broke off.
-        led_status_draw_done();
+        if (!led_status_draw_done() && !fail) fail = "display refresh failed";
         if (fail && f->timed_out) fail = "download timed out";
         if (fail) {
             result.message = fail;
@@ -395,14 +400,22 @@ static void fetch_task(void *arg) {
     vTaskDelete(NULL);
 }
 
-bool image_fetch_start(const char *url, int row, image_fetch_done_cb done,
-                       void *user, const char **code, const char **message) {
+static bool image_fetch_start_mode(const char *url, int row, bool gray4,
+                                   image_fetch_done_cb done, void *user,
+                                   const char **code, const char **message) {
     int width, height;
     if (!led_status_display_info(&width, &height)) {
         *code = "unsupported";
         *message = "no display";
         return false;
     }
+#if !CONFIG_HOMEHUB_LED_BACKEND_RETERMINAL_UC8179
+    if (gray4) {
+        *code = "unsupported";
+        *message = "four-gray refresh is available on E1001 only";
+        return false;
+    }
+#endif
     bool https = strncasecmp(url, "https://", 8) == 0;
     if (!https && strncasecmp(url, "http://", 7) != 0) {
         *code = "invalid_params";
@@ -445,6 +458,7 @@ bool image_fetch_start(const char *url, int row, image_fetch_done_cb done,
         return false;
     }
     f->https = https;
+    f->gray4 = gray4;
     f->row = row;
     f->done = done;
     f->user = user;
@@ -461,6 +475,16 @@ bool image_fetch_start(const char *url, int row, image_fetch_done_cb done,
     return true;
 }
 
+bool image_fetch_start(const char *url, int row, image_fetch_done_cb done,
+                       void *user, const char **code, const char **message) {
+    return image_fetch_start_mode(url, row, false, done, user, code, message);
+}
+
+bool image_fetch_start_gray4(const char *url, int row, image_fetch_done_cb done,
+                             void *user, const char **code, const char **message) {
+    return image_fetch_start_mode(url, row, true, done, user, code, message);
+}
+
 #else
 
 bool image_fetch_start(const char *url, int row, image_fetch_done_cb done,
@@ -472,6 +496,11 @@ bool image_fetch_start(const char *url, int row, image_fetch_done_cb done,
     *code = "unsupported";
     *message = "no display";
     return false;
+}
+
+bool image_fetch_start_gray4(const char *url, int row, image_fetch_done_cb done,
+                             void *user, const char **code, const char **message) {
+    return image_fetch_start(url, row, done, user, code, message);
 }
 
 #endif

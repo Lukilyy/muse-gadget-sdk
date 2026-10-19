@@ -72,6 +72,8 @@ upstream licenses:
 | [`esp32/components/minimp3/include/minimp3.h`](esp32/components/minimp3) | [lieff/minimp3](https://github.com/lieff/minimp3) | CC0-1.0, see [`LICENSE`](esp32/components/minimp3/LICENSE) |
 | [`esp32/components/muse/boards/ostb_echoear_display_init.h`](esp32/components/muse/boards/ostb_echoear_display_init.h) | [78/xiaozhi-esp32 ESP-VoCat panel sequence](https://github.com/78/xiaozhi-esp32/blob/0d576d3d4c049c6f55eaf879725dc23e516511b4/main/boards/espressif/esp-vocat/esp_vocat.cc) | MIT, retained in the file header |
 | [`esp32/main/pixel_font.c`](esp32/main/pixel_font.c) | Adafruit GFX `glcdfont.c` | BSD-2-Clause, in the file header |
+| [`esp32/main/e1002_battery_curve.h`](esp32/main/e1002_battery_curve.h) | Seeed-reTerminal-E10xx-Firmware E1001/E1002 battery curve | MIT, retained in the file header |
+| [`esp32/main/uc8179_gray4_lut.h`](esp32/main/uc8179_gray4_lut.h) | Seeed_GFX2 UC8179 four-gray waveforms | MIT, retained in the file header |
 
 Dependencies fetched at build time are under their own licenses: ESP-IDF
 components (into `esp32/managed_components/`), and the simulator's LVGL and

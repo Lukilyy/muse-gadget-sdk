@@ -1204,7 +1204,14 @@ int led_status_display_bits(void) {
 #endif
 }
 
-void led_status_draw_done(void) {
+void led_status_draw_begin(void) {
+}
+
+void led_status_draw_begin_gray4(void) {
+}
+
+bool led_status_draw_done(void) {
+    return true;
 }
 
 #if CONFIG_HOMEHUB_DISPLAY

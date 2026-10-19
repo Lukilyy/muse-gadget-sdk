@@ -30,11 +30,12 @@ CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
 # No status LED under firmware control that can show colours: the e-paper
 # shows a status screen.
 CONFIG_HOMEHUB_LED_BACKEND_RETERMINAL_SPECTRA6=y
+CONFIG_HOMEHUB_RETERMINAL_E100X_HARDWARE=y
 # Advertise as <prefix>-Disp-XXXXXX to tell this board apart from real devices:
 # MuseGadget-Disp in the open-source build, HomeLink-Disp in the internal one.
 CONFIG_HOMEHUB_BLE_NAME_SUFFIX="-Disp"
-# The green button on top, active low. The two white ones (GPIO4 and 5) are
-# not used.
+# The green button on top, active low; retains setup/reset gestures.
+# Hardware commands expose KEY0/1/2 (GPIO3/4/5) without application mappings.
 CONFIG_HOMEHUB_BUTTON_GPIO=3
 CONFIG_HOMEHUB_BUTTON_LABEL="the green button"
 

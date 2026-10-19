@@ -80,6 +80,7 @@ class LinkImageFetchHarnessTest(unittest.TestCase):
                 "-Wno-unused-variable",
                 "-g",
                 "-O1",
+                "-DCONFIG_HOMEHUB_LED_BACKEND_RETERMINAL_UC8179=1",
                 *sanitizer_flags,
                 "-DLINK_FAKE_CUSTOM_TASKS",
                 "-DLINK_FAKE_CUSTOM_HEAP_CAPS",

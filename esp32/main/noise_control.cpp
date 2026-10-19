@@ -16,6 +16,10 @@
 
 #include "ble_commands.h"
 #include "noise_control.h"
+#include "sdkconfig.h"
+#if CONFIG_HOMEHUB_RETERMINAL_E100X_HARDWARE
+#include "e1002_hardware.h"
+#endif
 #include "stack_monitor.h"
 #include "noise_upgrade.h"
 #include "noise_tunnel_internal.h"
@@ -1442,6 +1446,17 @@ static char *build_register_json(void) {
 #endif
         cJSON_AddItemToObject(url_optional, "row", top_param);
         add_command(commands, "display.draw_url", desc, url_required, url_optional);
+#if CONFIG_HOMEHUB_LED_BACKEND_RETERMINAL_UC8179
+        add_command(commands, "display.draw_gray4_url",
+                    "E1001 only: download a baseline JPEG or raw RGB565 image and show "
+                    "it using the panel's four physical gray levels (black, dark gray, "
+                    "light gray, white). The device converts and dithers the input, "
+                    "then performs one full gray refresh. Use for photos; "
+                    "display.draw_url keeps the faster black-and-white mode.",
+                    cJSON_Duplicate(url_required, true), cJSON_Duplicate(url_optional, true));
+        cJSON_AddNumberToObject(
+            cJSON_GetObjectItem(commands, "display.draw_gray4_url"), "timeout_ms", 90000);
+#endif
         // The six-colour e-paper may first finish a status screen refresh,
         // then takes as long again for the image.
         cJSON_AddNumberToObject(
@@ -1515,6 +1530,9 @@ static char *build_register_json(void) {
     ble_commands_register(commands);
 #endif
 
+#if CONFIG_HOMEHUB_RETERMINAL_E100X_HARDWARE
+    e1002_hardware_register(commands);
+#endif
     cJSON_AddItemToObject(params, "commands_v2", commands);
     cJSON_AddItemToObject(root, "params", params);
 
@@ -1645,6 +1663,9 @@ static void send_device_health(
                           charging ? charging : cJSON_CreateNull());
     cJSON_AddItemToObject(metrics, "usb_power",
                           usb_power ? usb_power : cJSON_CreateNull());
+#if CONFIG_HOMEHUB_RETERMINAL_E100X_HARDWARE
+    e1002_hardware_health(metrics);
+#endif
     cJSON_AddItemToObject(health, "metrics", metrics);
     if (wifi_ssid[0]) {
         cJSON_AddStringToObject(health, "network_ssid", wifi_ssid);

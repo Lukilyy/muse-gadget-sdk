@@ -260,6 +260,14 @@ bool led_status_display_info(int *width, int *height) {
 }
 
 static int g_rows_drawn;
+static int g_gray_begins;
+
+void led_status_draw_begin(void) {
+}
+
+void led_status_draw_begin_gray4(void) {
+    g_gray_begins++;
+}
 
 bool led_status_draw_rect(int x, int y, int w, int h, const uint16_t *pixels) {
     (void)x;
@@ -270,7 +278,8 @@ bool led_status_draw_rect(int x, int y, int w, int h, const uint16_t *pixels) {
     return true;
 }
 
-void led_status_draw_done(void) {
+bool led_status_draw_done(void) {
+    return true;
 }
 
 JRESULT jd_prepare(JDEC *jd, UINT (*infunc)(JDEC *, BYTE *, UINT), void *pool,
@@ -357,6 +366,18 @@ static void test_same_scheme_redirects_are_followed(void) {
     CHECK(g_rows_drawn == 6, "expected 6 rows, got %d", g_rows_drawn);
 }
 
+static void test_gray4_entry_uses_gray_canvas(void) {
+    reset_server();
+    add_response((response_t){.status = 200, .body_len = ROW_BYTES});
+    const char *code = NULL, *message = NULL;
+    int before = g_gray_begins;
+    g_done = false;
+    CHECK(image_fetch_start_gray4("http://host/gray", 0, on_done, NULL, &code, &message),
+          "gray start refused: %s", message ? message : "");
+    CHECK(g_done && g_result.ok, "gray download failed");
+    CHECK(g_gray_begins == before + 1, "gray image did not select gray canvas");
+}
+
 static void test_trickled_body_hits_the_deadline(void) {
     reset_server();
     // One byte every 9 s never trips the 10 s per-read timeout.
@@ -396,6 +417,7 @@ int main(void) {
     test_https_redirect_to_http_is_refused();
     test_scheme_check_ignores_case();
     test_same_scheme_redirects_are_followed();
+    test_gray4_entry_uses_gray_canvas();
     test_trickled_body_hits_the_deadline();
     test_slow_redirect_chain_stops_at_the_limit();
     puts("image_fetch harness: ok");
