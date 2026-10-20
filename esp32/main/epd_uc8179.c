@@ -235,7 +235,7 @@ static const epd_panel_t s_panel = {
     .status_scale    = 4,
     .init            = uc8179_init,
     .update          = uc8179_update,
-    .update_gray4    = uc8179_update_gray4,
+    .update_gray4_planes = uc8179_update_gray4,
 };
 
 const epd_panel_t *epd_panel_get(void) { return &s_panel; }

@@ -40,9 +40,10 @@ typedef struct {
     // Show `frame` on the panel. `prev` is what the panel currently shows
     // (NULL on colour panels). Both are `row_bytes * height` long.
     esp_err_t (*update)(const uint8_t *frame, const uint8_t *prev, bool full);
-    // Optional four-level grayscale refresh. Each plane is one bit per pixel;
-    // the caller packs the controller's old and new plane codes.
-    esp_err_t (*update_gray4)(const uint8_t *old_plane, const uint8_t *new_plane);
+    // Optional four-level grayscale refresh from a packed 2-bit frame.
+    esp_err_t (*update_gray4)(const uint8_t *frame);
+    // Optional UC8179 four-gray refresh from two 1-bit data planes.
+    esp_err_t (*update_gray4_planes)(const uint8_t *old_plane, const uint8_t *new_plane);
 } epd_panel_t;
 
 const epd_panel_t *epd_panel_get(void);

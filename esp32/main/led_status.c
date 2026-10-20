@@ -1198,7 +1198,7 @@ int led_status_display_bits(void) {
     return s_panel ? 16 : 0;
 #elif CONFIG_HOMEHUB_LED_BACKEND_MUSE && CONFIG_HOMEHUB_DISPLAY_COMMANDS
     int w, h;
-    return muse_ui_image_size(&w, &h) ? 16 : 0;
+    return muse_ui_image_size(&w, &h) ? muse_ui_image_bits() : 0;
 #else
     return 0;
 #endif
@@ -1211,6 +1211,9 @@ void led_status_draw_begin_gray4(void) {
 }
 
 bool led_status_draw_done(void) {
+#if CONFIG_HOMEHUB_LED_BACKEND_MUSE && CONFIG_HOMEHUB_DISPLAY_COMMANDS
+    muse_ui_image_done();
+#endif
     return true;
 }
 

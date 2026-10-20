@@ -66,6 +66,22 @@ static void check_luma(void) {
     assert(mid >= 126 && mid <= 134);
 }
 
+static void check_gray4(void) {
+    uint8_t packed[W / 4 * H];
+    memset(gray, 0, sizeof(gray));
+    dither_gray4(gray, packed, W, H, err);
+    for (size_t i = 0; i < sizeof(packed); i++) assert(packed[i] == 0);
+    memset(gray, 255, sizeof(gray));
+    dither_gray4(gray, packed, W, H, err);
+    for (size_t i = 0; i < sizeof(packed); i++) assert(packed[i] == 0xFF);
+    gray[0] = 0;
+    gray[1] = 85;
+    gray[2] = 170;
+    gray[3] = 255;
+    dither_gray4(gray, packed, W, H, err);
+    assert(packed[0] == 0x1B);
+}
+
 static void check_rgb565_be(void) {
     const uint8_t src[] = {0xF8, 0x00, 0x07, 0xE0, 0x00, 0x1F, 0x84, 0x10};
     for (int i = 0; i < 4; i++) rgb[i] = rgb565_from_be(src + 2 * i);
@@ -115,14 +131,14 @@ static void check_dither(void) {
     }
 }
 
-static void check_gray4(void) {
+static void check_gray4_planes(void) {
     memset(gray, 0, sizeof(gray));
-    dither_gray4(gray, gray_old, gray_new, W, H, err);
+    dither_gray4_planes(gray, gray_old, gray_new, W, H, err);
     for (size_t i = 0; i < sizeof(gray_old); i++) {
         assert(gray_old[i] == 0xFF && gray_new[i] == 0xFF);
     }
     memset(gray, 255, sizeof(gray));
-    dither_gray4(gray, gray_old, gray_new, W, H, err);
+    dither_gray4_planes(gray, gray_old, gray_new, W, H, err);
     for (size_t i = 0; i < sizeof(gray_old); i++) {
         assert(gray_old[i] == 0x00 && gray_new[i] == 0x00);
     }
@@ -130,7 +146,7 @@ static void check_gray4(void) {
     for (int y = 0; y < H; y++) {
         for (int x = 0; x < W; x++) gray[y * W + x] = levels[x % 8];
     }
-    dither_gray4(gray, gray_old, gray_new, W, H, err);
+    dither_gray4_planes(gray, gray_old, gray_new, W, H, err);
     for (int y = 0; y < H; y++) {
         for (int x = 0; x < W / 8; x++) {
             assert(gray_old[y * W / 8 + x] == 0xAA);
@@ -210,6 +226,7 @@ int main(void) {
     check_rgb565_be();
     check_dither();
     check_gray4();
+    check_gray4_planes();
     check_color_dither();
     puts("PASS epaper pixels: RGB565 luma, exact black and white, bit order, checkerboard, gray levels as dot density; "
          "exact Spectra 6 inks, nibble order, grays in black and white, orange as red and yellow");
