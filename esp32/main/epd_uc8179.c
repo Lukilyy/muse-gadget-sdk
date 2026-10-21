@@ -22,6 +22,7 @@
 // and timings: GxEPD2's GxEPD2_750_GDEY075T7 (github.com/ZinggJM/GxEPD2).
 
 #include "epd_panel.h"
+#include "reterminal_e100x_board.h"
 #include "uc8179_gray4_lut.h"
 
 #include <string.h>
@@ -37,15 +38,15 @@
 static const char *TAG = "link.led";
 
 #define EPD_HOST        SPI2_HOST
-#define EPD_PIN_SCLK    7
-#define EPD_PIN_MOSI    9
-#define EPD_PIN_CS      10
-#define EPD_PIN_DC      11
-#define EPD_PIN_RST     12
-#define EPD_PIN_BUSY    13
+#define EPD_PIN_SCLK    E100X_SPI_SCLK_GPIO
+#define EPD_PIN_MOSI    E100X_SPI_MOSI_GPIO
+#define EPD_PIN_CS      E100X_PANEL_CS_GPIO
+#define EPD_PIN_DC      E100X_PANEL_DC_OR_DRIVE_GPIO
+#define EPD_PIN_RST     E100X_PANEL_RESET_GPIO
+#define EPD_PIN_BUSY    E100X_PANEL_READY_GPIO
 #define EPD_SPI_HZ      (10 * 1000 * 1000)
-#define EPD_W           800
-#define EPD_H           480
+#define EPD_W           E100X_WIDTH
+#define EPD_H           E100X_HEIGHT
 #define EPD_ROW_BYTES   (EPD_W / 8)
 #define EPD_FRAME_BYTES (EPD_ROW_BYTES * EPD_H)
 #define EPD_CHUNK_BYTES (EPD_ROW_BYTES * 40)
@@ -119,7 +120,7 @@ static esp_err_t uc8179_init(void) {
         .sclk_io_num = EPD_PIN_SCLK,
         .mosi_io_num = EPD_PIN_MOSI,
 #if CONFIG_HOMEHUB_RETERMINAL_E100X_HARDWARE
-        .miso_io_num = 8, // SD shares SPI2 with the E1001 panel.
+        .miso_io_num = E100X_SPI_MISO_GPIO, // SD shares SPI2 with the E1001 panel.
 #else
         .miso_io_num = -1,
 #endif

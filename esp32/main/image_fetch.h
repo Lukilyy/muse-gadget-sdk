@@ -62,9 +62,20 @@ typedef void (*image_fetch_done_cb)(const image_fetch_result_t *result, void *us
 // download task.
 bool image_fetch_start(const char *url, int row, image_fetch_done_cb done,
                        void *user, const char **code, const char **message);
+
+// Draw a file on the connected VM through bounded Noise Range requests.
+// Shares the download limit and ordinary display mode with draw_url.
+bool image_fetch_start_vm(const char *path, int row, image_fetch_done_cb done,
+                          void *user, const char **code, const char **message);
 // E1001 only: the same input formats, rendered with its physical four-gray waveform.
 bool image_fetch_start_gray4(const char *url, int row, image_fetch_done_cb done,
                              void *user, const char **code, const char **message);
+bool image_fetch_start_gray16(const char *url, int row, image_fetch_done_cb done,
+                              void *user, const char **code, const char **message);
+// E1003: image dimensions must exactly match the aligned update rectangle.
+bool image_fetch_start_partial(const char *url, int x, int y, int w, int h,
+                               image_fetch_done_cb done, void *user,
+                               const char **code, const char **message);
 
 #ifdef __cplusplus
 }

@@ -46,7 +46,7 @@ answer requests on a different cloud session.
   below 500 mV or a range above 400 mV at the ADC. Voltage is doubled to undo
   the divider, then mapped through Seeed's 101-point E1001/E1002 curve and
   rounded to a whole percent. The adapted table retains its MIT notice in
-  `e1002_battery_curve.h`. It is not a fuel gauge or
+  `reterminal_e100x.c` alongside the E1003 table. It is not a fuel gauge or
   an assertion of charging. The same values are in `device.health`.
 - `buzzer.beep`: `frequency_hz` 100..5000, `duration_ms` 20..1000. Automatically
   stops; a subsequent tone replaces the earlier tone.
@@ -90,3 +90,8 @@ async results and registration size. IDF API definitions were checked against
 the local ESP-IDF v6.0.1 headers. These checks do not replace builds or
 hardware validation of pin levels, SD cards, audio quality, battery calibration
 or clock retention on either board. Build and flash are user-owned in this change.
+
+The shared implementation is now named `reterminal_e100x`: simple board
+peripherals and wiring are centralized, while SD, RTC, events and microphone
+retain independent modules. Existing command names and payloads are unchanged.
+See [the shared structure and regression checks](e1003-hardware.md#e100x-structure-and-regression-checks).

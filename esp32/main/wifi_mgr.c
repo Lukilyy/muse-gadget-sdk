@@ -235,6 +235,16 @@ void wifi_mgr_init(void) {
     }
 }
 
+bool wifi_mgr_set_online_power_save(bool enabled) {
+    if (!s_inited) return false;
+    esp_err_t err = esp_wifi_set_ps(enabled ? WIFI_PS_MIN_MODEM : WIFI_PS_NONE);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Wi-Fi online power save unavailable: %s", esp_err_to_name(err));
+        return false;
+    }
+    return true;
+}
+
 bool wifi_mgr_connect(const char *ssid, const char *password, int timeout_ms) {
     if (!s_inited) wifi_mgr_init();
 

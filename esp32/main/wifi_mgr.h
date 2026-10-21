@@ -30,6 +30,10 @@ typedef struct {
 
 void wifi_mgr_init(void);
 
+// Keep STA associated while allowing DTIM-based modem sleep. Boards opt in
+// after init; the default Link behavior remains WIFI_PS_NONE.
+bool wifi_mgr_set_online_power_save(bool enabled);
+
 // Returns the STA esp_netif handle (NULL before wifi_mgr_init()). The pointer
 // is stable for the lifetime of the process.
 esp_netif_t *wifi_mgr_get_netif(void);

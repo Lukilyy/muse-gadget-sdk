@@ -15,7 +15,10 @@
  */
 
 #include "battery_adc.h"
-#include "e1002_battery_curve.h"
+#include "sdkconfig.h"
+#include "reterminal_e100x_board.h"
+#define BATTERY_ENABLE_GPIO E100X_BATTERY_ENABLE_GPIO
+#define battery_percent reterminal_e100x_battery_percent
 
 #include <limits.h>
 #include <stdbool.h>
@@ -35,8 +38,7 @@
 #define BATTERY_SAMPLE_INTERVAL_MS 25
 #define MIN_VALID_ADC_MV 500
 #define MAX_ADC_RANGE_MV 400
-#define BATTERY_ADC_GPIO 1
-#define BATTERY_ENABLE_GPIO 21
+#define BATTERY_ADC_GPIO E100X_BATTERY_ADC_GPIO
 
 static const char *TAG = "battery_adc";
 
@@ -62,7 +64,12 @@ static bool battery_adc_init(void) {
         ESP_LOGW(TAG, "enable GPIO config failed");
         return false;
     }
+    // E1003's VBAT_EN is held high in Seeed's early board initialization.
+#if E100X_BATTERY_KEEP_ENABLED
+    gpio_set_level(BATTERY_ENABLE_GPIO, 1);
+#else
     gpio_set_level(BATTERY_ENABLE_GPIO, 0);
+#endif
 
     adc_unit_t unit_id;
     if (adc_oneshot_io_to_channel(BATTERY_ADC_GPIO,
@@ -137,11 +144,13 @@ bool battery_adc_read(int *mv_out, int *pct_out) {
         if (mv > max_mv) max_mv = mv;
         if (i + 1 < BATTERY_SAMPLES) vTaskDelay(pdMS_TO_TICKS(BATTERY_SAMPLE_INTERVAL_MS));
     }
+#if !E100X_BATTERY_KEEP_ENABLED
     if (gpio_set_level(BATTERY_ENABLE_GPIO, 0) != ESP_OK) ok = false;
+#endif
     if (!ok) return false;
     int average_mv = sum_mv / BATTERY_SAMPLES;
     if (average_mv < MIN_VALID_ADC_MV || max_mv - min_mv > MAX_ADC_RANGE_MV) return false;
     *mv_out = average_mv * 2; // R19/R21 divide battery voltage by two.
-    *pct_out = e1002_battery_percent(*mv_out);
+    *pct_out = battery_percent(*mv_out);
     return true;
 }

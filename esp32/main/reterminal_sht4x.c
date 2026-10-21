@@ -16,8 +16,8 @@
 
 #include "reterminal_sht4x.h"
 #include "sdkconfig.h"
-#if CONFIG_HOMEHUB_RETERMINAL_E100X_HARDWARE
-#include "e1002_i2c.h"
+#if CONFIG_HOMEHUB_LED_BACKEND_RETERMINAL_UC8179 || CONFIG_HOMEHUB_LED_BACKEND_RETERMINAL_SPECTRA6 || CONFIG_HOMEHUB_LED_BACKEND_RETERMINAL_IT8951
+#include "reterminal_e100x_board.h"
 #endif
 
 #include <math.h>
@@ -134,8 +134,8 @@ static cJSON *readings_result(const reading_t *readings, int64_t now_us) {
 #define SHT4X_SCL_GPIO 0
 #define SHT4X_I2C_PORT I2C_NUM_1
 #else
-#define SHT4X_SDA_GPIO 19
-#define SHT4X_SCL_GPIO 20
+#define SHT4X_SDA_GPIO E100X_I2C_SDA_GPIO
+#define SHT4X_SCL_GPIO E100X_I2C_SCL_GPIO
 #define SHT4X_I2C_PORT -1
 #endif
 
@@ -196,8 +196,8 @@ static void sensors_task(void *arg) {
 
 void reterminal_sht4x_init(void) {
     bool owns_bus = false;
-#if CONFIG_HOMEHUB_RETERMINAL_E100X_HARDWARE
-    i2c_master_bus_handle_t bus = e1002_i2c_bus_get();
+#if CONFIG_HOMEHUB_RETERMINAL_E100X_HARDWARE || CONFIG_HOMEHUB_RETERMINAL_E1003_INPUT || CONFIG_HOMEHUB_RETERMINAL_E1003_HARDWARE
+    i2c_master_bus_handle_t bus = reterminal_e100x_i2c_bus_get();
     esp_err_t err = bus ? ESP_OK : ESP_ERR_INVALID_STATE;
 #else
     i2c_master_bus_config_t bus_cfg = {
@@ -242,4 +242,17 @@ cJSON *reterminal_sht4x_command(void) {
     memcpy(snapshot, s_readings, sizeof(snapshot));
     taskEXIT_CRITICAL(&s_lock);
     return readings_result(snapshot, esp_timer_get_time());
+}
+
+bool reterminal_sht4x_temperature(float *temp_c) {
+    if (!temp_c) return false;
+    taskENTER_CRITICAL(&s_lock);
+    reading_t reading = s_readings[SENSOR_TEMPERATURE];
+    taskEXIT_CRITICAL(&s_lock);
+    int64_t age = esp_timer_get_time() - reading.at_us;
+    if (!reading.valid || age < 0 || age > STALE_US || !isfinite(reading.value)) {
+        return false;
+    }
+    *temp_c = reading.value;
+    return true;
 }

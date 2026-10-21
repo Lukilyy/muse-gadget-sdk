@@ -63,11 +63,16 @@ def _sanitizer_flags(cc: list[str], tmp: Path) -> list[str]:
 
 
 class LinkImageFetchHarnessTest(unittest.TestCase):
-    def test_redirect_scheme_lock_and_deadline(self) -> None:
+    def run_harness(self, spiram: bool, board: str) -> None:
         cc = _cc_command()
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)
             binary = tmp / "link_image_fetch_harness"
+            wrapped_source = tmp / "image_fetch.c"
+            wrapped_source.write_text(
+                '#include "image_fetch_alloc.h"\n'
+                f'#include "{ROOT / "main" / "image_fetch.c"}"\n'
+            )
             sanitizer_flags = _sanitizer_flags(cc, tmp)
             compile_cmd = [
                 *cc,
@@ -80,10 +85,11 @@ class LinkImageFetchHarnessTest(unittest.TestCase):
                 "-Wno-unused-variable",
                 "-g",
                 "-O1",
-                "-DCONFIG_HOMEHUB_LED_BACKEND_RETERMINAL_UC8179=1",
+                f"-DCONFIG_HOMEHUB_LED_BACKEND_RETERMINAL_{board}=1",
                 *sanitizer_flags,
                 "-DLINK_FAKE_CUSTOM_TASKS",
                 "-DLINK_FAKE_CUSTOM_HEAP_CAPS",
+                f"-DCONFIG_SPIRAM={int(spiram)}",
                 "-I",
                 str(ROOT / "tests" / "image_fetch_fakes"),
                 "-I",
@@ -91,7 +97,7 @@ class LinkImageFetchHarnessTest(unittest.TestCase):
                 "-I",
                 str(ROOT / "main"),
                 str(ROOT / "tests" / "link_image_fetch_harness.c"),
-                str(ROOT / "main" / "image_fetch.c"),
+                str(wrapped_source),
                 "-o",
                 str(binary),
             ]
@@ -125,6 +131,15 @@ class LinkImageFetchHarnessTest(unittest.TestCase):
                 0,
                 msg=run_proc.stdout + run_proc.stderr,
             )
+
+    def test_downloads_and_memory_without_psram(self) -> None:
+        self.run_harness(False, "UC8179")
+
+    def test_downloads_and_memory_with_psram(self) -> None:
+        self.run_harness(True, "UC8179")
+
+    def test_e1003_modes_with_vm_fetch(self) -> None:
+        self.run_harness(True, "IT8951")
 
 
 if __name__ == "__main__":

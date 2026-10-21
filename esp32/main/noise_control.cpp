@@ -17,8 +17,8 @@
 #include "ble_commands.h"
 #include "noise_control.h"
 #include "sdkconfig.h"
-#if CONFIG_HOMEHUB_RETERMINAL_E100X_HARDWARE
-#include "e1002_hardware.h"
+#if CONFIG_HOMEHUB_RETERMINAL_E100X_HARDWARE || CONFIG_HOMEHUB_RETERMINAL_E1003_INPUT || CONFIG_HOMEHUB_RETERMINAL_E1003_HARDWARE
+#include "reterminal_e100x.h"
 #endif
 #include "stack_monitor.h"
 #include "noise_upgrade.h"
@@ -80,6 +80,12 @@ static char s_noise_host[256] = NOISE_DEFAULT_HOST;
 #else
 #define SHOW_AGENT_NAME 0
 #endif
+// Extra VM requests serve Muse chat and display.draw_file on Link displays.
+#if CONFIG_MUSE_ENABLED || CONFIG_HOMEHUB_DISPLAY_COMMANDS
+#define NOISE_REQUESTS 1
+#else
+#define NOISE_REQUESTS 0
+#endif
 
 #define RECONNECT_MIN_MS          1000
 #define RECONNECT_MAX_MS          15000
@@ -109,13 +115,16 @@ static char s_noise_host[256] = NOISE_DEFAULT_HOST;
 // Chat subscriptions deliver 16 KB body chunks plus framing, even on boards
 // without PSRAM. Reserve enough inbound space for those frames. Not on the
 // ESP32-C3 AI Passport: three 17 KB buffers beside its UI leave too little to
-// upload a voice note. It takes 12 KB, as the PSRAM boards' session does.
+// upload a voice note. It takes 12 KB, as Link boards without PSRAM do.
+// PSRAM boards accept the protocol's largest frame for draw_file Range replies.
 // Chat events arrive one per frame; a frame over that ends the session (it
 // can't be skipped: Noise's nonces and the ordered framer would desync), the
 // request in flight ends with NOISE_CTRL_REQ_TOO_LARGE, and the session
 // reconnects.
 #if SMALL_CONTROL_SESSION && CONFIG_MUSE_BOARD_AI_PASSPORT
 #define SVC_FRAME_SCRATCH (12 * 1024)
+#elif CONFIG_SPIRAM
+#define SVC_FRAME_SCRATCH (64 * 1024)
 #else
 #define SVC_FRAME_SCRATCH (SMALL_CONTROL_SESSION ? 17 * 1024 : 12288)
 #endif
@@ -1011,8 +1020,8 @@ static bool tunnel_send_body_inplace(void *vctx, uint8_t *buf, size_t headroom,
 
 // ---- Extra daemon requests (noise_ctrl_req_*) --------------------------------
 
-// Only Muse opens these; Link-only gateways get the empty stubs below.
-#if CONFIG_MUSE_ENABLED
+// Muse and display.draw_file open these; other gateways get the stubs below.
+#if NOISE_REQUESTS
 
 // Stream ids from here up belong to these requests; lower ids are Link's own.
 #define REQ_STREAM_BASE 16
@@ -1214,7 +1223,7 @@ static void req_init(void) {
 static void req_init(void) {}
 static void req_end_all(void) {}
 static bool req_on_frame(const DecodedServiceFrame &) { return false; }
-#endif  // CONFIG_MUSE_ENABLED
+#endif  // NOISE_REQUESTS
 
 // ---- Agent identity ----------------------------------------------------------
 
@@ -1312,6 +1321,23 @@ static cJSON *string_param(const char *description) {
     return param;
 }
 
+#if CONFIG_HOMEHUB_DISPLAY_COMMANDS
+static cJSON *row_params(void) {
+    cJSON *optional = cJSON_CreateObject();
+    cJSON *row = cJSON_CreateObject();
+    cJSON_AddStringToObject(row, "type", "integer");
+    cJSON_AddStringToObject(row, "description",
+#if CONFIG_HOMEHUB_LED_BACKEND_MUSE
+                            "Row to draw the top of the image at; by default a JPEG "
+                            "is centred down the screen and raw data starts at 0.");
+#else
+                            "Row to draw the top of the image at; default 0.");
+#endif
+    cJSON_AddItemToObject(optional, "row", row);
+    return optional;
+}
+#endif
+
 static void add_command(cJSON *commands, const char *name,
                         const char *description,
                         cJSON *required, cJSON *optional) {
@@ -1341,6 +1367,10 @@ static char *build_register_json(void) {
     copy_wifi_ssid(wifi_ssid, sizeof(wifi_ssid));
 
     cJSON *root = cJSON_CreateObject();
+    if (!root) {
+        ESP_LOGE(TAG, "link.register JSON root allocation failed");
+        return nullptr;
+    }
     cJSON_AddStringToObject(root, "type", "req");
     char uuid[40];
     make_uuid(uuid, sizeof(uuid));
@@ -1351,6 +1381,11 @@ static char *build_register_json(void) {
     s_register_req_id[sizeof(s_register_req_id) - 1] = '\0';
     cJSON_AddStringToObject(root, "method", "link.register");
     cJSON *params = cJSON_CreateObject();
+    if (!params) {
+        ESP_LOGE(TAG, "link.register JSON params allocation failed");
+        cJSON_Delete(root);
+        return nullptr;
+    }
     cJSON_AddStringToObject(params, "node_id", s_node_id);
     cJSON_AddStringToObject(params, "display_name", s_display_name);
     cJSON_AddStringToObject(params, "platform", "esp32");
@@ -1363,6 +1398,12 @@ static char *build_register_json(void) {
     add_register_metadata_string(&metadata, params, "network_ssid", wifi_ssid);
 
     cJSON *commands = cJSON_CreateObject();
+    if (!commands) {
+        ESP_LOGE(TAG, "link.register JSON commands allocation failed");
+        cJSON_Delete(params);
+        cJSON_Delete(root);
+        return nullptr;
+    }
     add_command(commands, "device.health",
                 "Report basic Link health, including battery level (percent), "
                 "voltage, and whether it is charging or on USB power; each is "
@@ -1439,17 +1480,7 @@ static char *build_register_json(void) {
         cJSON *url_required = cJSON_CreateObject();
         cJSON_AddItemToObject(url_required, "url",
                               string_param("http:// or https:// URL of the image."));
-        cJSON *url_optional = cJSON_CreateObject();
-        cJSON *top_param = cJSON_CreateObject();
-        cJSON_AddStringToObject(top_param, "type", "integer");
-        cJSON_AddStringToObject(top_param, "description",
-#if CONFIG_HOMEHUB_LED_BACKEND_MUSE
-                                "Row to draw the top of the image at; by default a JPEG "
-                                "is centred down the screen and raw data starts at 0.");
-#else
-                                "Row to draw the top of the image at; default 0.");
-#endif
-        cJSON_AddItemToObject(url_optional, "row", top_param);
+        cJSON *url_optional = row_params();
         add_command(commands, "display.draw_url", desc, url_required, url_optional);
 #if CONFIG_HOMEHUB_LED_BACKEND_RETERMINAL_UC8179
         add_command(commands, "display.draw_gray4_url",
@@ -1462,10 +1493,51 @@ static char *build_register_json(void) {
         cJSON_AddNumberToObject(
             cJSON_GetObjectItem(commands, "display.draw_gray4_url"), "timeout_ms", 90000);
 #endif
+#if CONFIG_HOMEHUB_LED_BACKEND_RETERMINAL_IT8951
+        add_command(commands, "display.draw_gray16_url",
+                    "E1003 only: show a baseline JPEG or raw RGB565 using 16 physical gray levels. "
+                    "Full-screen refresh; display.draw_url retains the black-and-white mode.",
+                    cJSON_Duplicate(url_required, true), cJSON_Duplicate(url_optional, true));
+        cJSON_AddNumberToObject(
+            cJSON_GetObjectItem(commands, "display.draw_gray16_url"), "timeout_ms", 90000);
+        cJSON *partial_required = cJSON_Duplicate(url_required, true);
+        auto rect_param = [](const char *description) {
+            cJSON *item = cJSON_CreateObject();
+            cJSON_AddStringToObject(item, "type", "integer");
+            cJSON_AddStringToObject(item, "description", description);
+            return item;
+        };
+        cJSON_AddItemToObject(partial_required, "x", rect_param("Left edge; multiple of 16"));
+        cJSON_AddItemToObject(partial_required, "y", rect_param("Top edge"));
+        cJSON_AddItemToObject(partial_required, "width", rect_param("Width; multiple of 16"));
+        cJSON_AddItemToObject(partial_required, "height", rect_param("Height"));
+        add_command(commands, "display.draw_partial_url",
+                    "E1003 only: retain the rest of the monochrome screen and update one aligned "
+                    "rectangle. Source JPEG or raw RGB565 must exactly match width x height; "
+                    "no scaling. Full refresh occasionally to clear ghosting.",
+                    partial_required, nullptr);
+        cJSON_AddNumberToObject(
+            cJSON_GetObjectItem(commands, "display.draw_partial_url"), "timeout_ms", 90000);
+#endif
         // The six-colour e-paper may first finish a status screen refresh,
         // then takes as long again for the image.
         cJSON_AddNumberToObject(
             cJSON_GetObjectItem(commands, "display.draw_url"), "timeout_ms",
+            bits == 4 ? 120000 : 60000);
+        cJSON *path_required = cJSON_CreateObject();
+        cJSON_AddItemToObject(path_required, "path",
+                              string_param("Path of the image file on this VM, relative, "
+                                           "as the VM's file API takes it, e.g. "
+                                           "workspace/picture.jpg."));
+        add_command(commands, "display.draw_file",
+                    "Draw an image file from this VM on the screen. The same as "
+                    "display.draw_url, with the same image formats and screen, "
+                    "but takes a path on the VM instead of a URL: the device "
+                    "reads the file over its connection to the VM, so the file "
+                    "need not be on the internet. Replies when the image is drawn.",
+                    path_required, row_params());
+        cJSON_AddNumberToObject(
+            cJSON_GetObjectItem(commands, "display.draw_file"), "timeout_ms",
             bits == 4 ? 120000 : 60000);
         add_command(commands, "display.show_animation",
                     epaper ? "Clear the image and bring back the status screen "
@@ -1535,26 +1607,57 @@ static char *build_register_json(void) {
     ble_commands_register(commands);
 #endif
 
-#if CONFIG_HOMEHUB_RETERMINAL_E100X_HARDWARE
-    e1002_hardware_register(commands);
+#if CONFIG_HOMEHUB_RETERMINAL_E100X_HARDWARE || CONFIG_HOMEHUB_RETERMINAL_E1003_INPUT || CONFIG_HOMEHUB_RETERMINAL_E1003_HARDWARE
+    reterminal_e100x_register(commands);
 #endif
     cJSON_AddItemToObject(params, "commands_v2", commands);
     cJSON_AddItemToObject(root, "params", params);
 
-    // cJSON_PrintUnformatted grows its buffer by doubling, holding the old
-    // one each time, so ~2 KB of JSON briefly needs ~6 KB of byte-addressable
-    // heap. Right after the handshake there is often not that much, so print
-    // into one buffer sized to fit instead.
+    // cJSON_PrintUnformatted grows its buffer while retaining the old one.
+    // Keep registration bounded and retry only when the preallocated output
+    // is too small. A PSRAM board keeps this session-scoped JSON out of the
+    // internal heap needed by Wi-Fi/TLS; the control stream sends it in chunks.
+#if CONFIG_SPIRAM
+    constexpr int kInitialCapacity = 8192;
+    constexpr int kMaxCapacity = 16384;
+    constexpr int kGrowth = 2048;
+#else
+    constexpr int kInitialCapacity = 2048;
+    constexpr int kMaxCapacity = 8192;
+    constexpr int kGrowth = 512;
+#endif
     char *json = nullptr;
-    for (int size = 2048; size <= 8192 && !json; size += 512) {
-        json = (char *)malloc(size);
-        if (!json) break;
+    int capacity = 0;
+    bool allocation_failed = false;
+    for (int size = kInitialCapacity; size <= kMaxCapacity; size += kGrowth) {
+        capacity = size;
+#if CONFIG_SPIRAM
+        json = static_cast<char *>(heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+#else
+        json = static_cast<char *>(malloc(size));
+#endif
+        if (!json) {
+            allocation_failed = true;
+            break;
+        }
         if (!cJSON_PrintPreallocated(root, json, size, false)) {
             free(json);
             json = nullptr;
+            continue;
         }
+        break;
     }
     cJSON_Delete(root);
+    if (json) {
+        ESP_LOGI(TAG, "link.register JSON %u bytes (buffer %d)",
+                 (unsigned)strlen(json), capacity);
+    } else if (allocation_failed) {
+        ESP_LOGE(TAG, "link.register JSON output allocation failed at %d bytes",
+                 capacity);
+    } else {
+        ESP_LOGE(TAG, "link.register JSON serialization failed at %d-byte limit",
+                 kMaxCapacity);
+    }
     return json;
 }
 
@@ -1668,8 +1771,8 @@ static void send_device_health(
                           charging ? charging : cJSON_CreateNull());
     cJSON_AddItemToObject(metrics, "usb_power",
                           usb_power ? usb_power : cJSON_CreateNull());
-#if CONFIG_HOMEHUB_RETERMINAL_E100X_HARDWARE
-    e1002_hardware_health(metrics);
+#if CONFIG_HOMEHUB_RETERMINAL_E100X_HARDWARE || CONFIG_HOMEHUB_RETERMINAL_E1003_INPUT || CONFIG_HOMEHUB_RETERMINAL_E1003_HARDWARE
+    reterminal_e100x_health(metrics);
 #endif
     cJSON_AddItemToObject(health, "metrics", metrics);
     if (wifi_ssid[0]) {
@@ -2036,7 +2139,7 @@ static session_result_t run_session(stack_monitor_t *stack) {
     if (!rx_buf) rx_buf = static_cast<uint8_t *>(malloc(WS_RX_BUF_SIZE));
 
     // Crypto/framing scratch. PSRAM-preferred (with a heap fallback) so the
-    // 12 KB buffers don't land in internal SRAM — anything under
+    // buffers don't land in internal SRAM — anything under
     // CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL would otherwise be served from the
     // scarce internal pool that WiFi/TLS/lwIP also need.
     svc_scratch = static_cast<uint8_t *>(
@@ -2107,11 +2210,13 @@ static session_result_t run_session(stack_monitor_t *stack) {
         s_heartbeat_registered = false;
         char *reg_json = build_register_json();
         if (!reg_json) {
-            ESP_LOGE(TAG, "could not build link.register: int=%u/%u dma=%u/%u",
+            ESP_LOGE(TAG, "could not build link.register: int=%u/%u dma=%u/%u psram=%u/%u",
                      (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
                      (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL),
                      (unsigned)heap_caps_get_free_size(MALLOC_CAP_DMA),
-                     (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_DMA));
+                     (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_DMA),
+                     (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
+                     (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
             goto cleanup;
         }
         control_tx = {reg_json, strlen(reg_json), 0, false, session_generation};
@@ -2203,7 +2308,7 @@ static session_result_t run_session(stack_monitor_t *stack) {
                 auto &frame = inbound.frame;
                 bool is_tunnel = (frame.stream_id == TUNNEL_STREAM_ID);
                 if (req_on_frame(frame)) {
-                    // One of Muse's extra requests.
+                    // One of the extra requests (Muse, display.draw_file).
                 } else if (frame.stream_id == IDENTITY_STREAM_ID) {
                     identity_on_frame(identity, frame);
                 } else if (frame.kind == ServiceFrameKind::BodyChunk) {
@@ -2291,10 +2396,10 @@ static session_result_t run_session(stack_monitor_t *stack) {
             // wrap_result_json consumes the result tree. Retain its output
             // directly; there is no second whole-message allocation/copy.
             char *json = wrap_result_json(pr.request_id, pr.result);
-            free(pr.request_id);
             if (json) {
                 control_tx = {json, strlen(json), 0, false, session_generation};
             }
+            free(pr.request_id);
         }
         if (control_tx.json) {
             size_t old_offset = control_tx.json_offset;
@@ -2327,7 +2432,7 @@ static session_result_t run_session(stack_monitor_t *stack) {
             }
         }
 
-#if CONFIG_MUSE_ENABLED
+#if NOISE_REQUESTS
         {
             bool sent = false;
             if (!req_pump_tx(tls, session, svc_scratch, env_scratch, ws_buf, &sent)) {
@@ -2575,7 +2680,7 @@ extern "C" void noise_ctrl_send_command_result(
     queue_result(session_generation, request_id, result);
 }
 
-#if CONFIG_MUSE_ENABLED
+#if NOISE_REQUESTS
 extern "C" int64_t noise_ctrl_req_open(const char *verb, const char *path,
                                        const char *const *headers, bool end_body,
                                        noise_ctrl_req_cb cb, void *ctx) {
@@ -2638,4 +2743,9 @@ extern "C" void noise_ctrl_req_cancel(int64_t id) {
     req_op op = {req_op_kind::Cancel, false, id, nullptr, 0, nullptr, nullptr};
     req_put(op, pdMS_TO_TICKS(100));
 }
-#endif  // CONFIG_MUSE_ENABLED
+
+// Allow room for framing and response metadata in an inbound service frame.
+extern "C" size_t noise_ctrl_req_max_body(void) {
+    return SVC_FRAME_SCRATCH - 2048;
+}
+#endif  // NOISE_REQUESTS

@@ -26,6 +26,9 @@
 #include "led_status.h"
 #include "epd_panel.h"
 #include "sdkconfig.h"
+#if CONFIG_HOMEHUB_LED_BACKEND_RETERMINAL_UC8179 || CONFIG_HOMEHUB_LED_BACKEND_RETERMINAL_SPECTRA6 || CONFIG_HOMEHUB_LED_BACKEND_RETERMINAL_IT8951
+#include "link_power.h"
+#endif
 
 #include <math.h>
 #include <stdio.h>
@@ -41,6 +44,26 @@
 #include "stack_monitor.h"
 
 static const char *TAG = "link.led";
+
+static bool display_owner_acquire(void) {
+#if CONFIG_HOMEHUB_LED_BACKEND_RETERMINAL_UC8179 || CONFIG_HOMEHUB_LED_BACKEND_RETERMINAL_SPECTRA6 || CONFIG_HOMEHUB_LED_BACKEND_RETERMINAL_IT8951
+    if (!link_power_acquire(LINK_POWER_DISPLAY)) return false;
+    if (!link_power_pm_enter(LINK_PM_PANEL)) {
+        link_power_release(LINK_POWER_DISPLAY);
+        return false;
+    }
+    return true;
+#else
+    return true;
+#endif
+}
+
+static void display_owner_release(void) {
+#if CONFIG_HOMEHUB_LED_BACKEND_RETERMINAL_UC8179 || CONFIG_HOMEHUB_LED_BACKEND_RETERMINAL_SPECTRA6 || CONFIG_HOMEHUB_LED_BACKEND_RETERMINAL_IT8951
+    link_power_pm_leave(LINK_PM_PANEL);
+    link_power_release(LINK_POWER_DISPLAY);
+#endif
+}
 
 // ---- Pixels (host-tested) ---------------------------------------------------
 
@@ -291,6 +314,11 @@ static SemaphoreHandle_t s_lock;
 static bool s_image_mode;
 static bool s_image_dirty;
 static bool s_gray4_mode;
+static bool s_gray16_mode;
+static bool s_partial_mode;
+static bool s_partial_ready;
+static unsigned s_partial_updates;
+static int s_partial_x, s_partial_y, s_partial_w, s_partial_h;
 static bool s_status_drawn;
 static const char *s_drawn_label;
 static char s_drawn_title[48];
@@ -424,15 +452,21 @@ static void epd_task(void *arg) {
         }
         xSemaphoreGive(s_lock);
         if (redraw) {
-            esp_err_t err = s_panel->update(s_frame, s_shown, full);
+            bool owned = display_owner_acquire();
+            esp_err_t err = owned ? s_panel->update(s_frame, s_shown, full) : ESP_ERR_INVALID_STATE;
             if (err == ESP_OK) {
                 if (s_shown) memcpy(s_shown, s_frame, EPD_FRAME_BYTES);
+                if (s_panel->update_partial) {
+                    s_partial_ready = true;
+                    s_partial_updates = 0;
+                }
                 s_fast_refreshes = full ? 0 : s_fast_refreshes + 1;
             } else {
                 xSemaphoreTake(s_lock, portMAX_DELAY);
                 s_status_drawn = false;
                 xSemaphoreGive(s_lock);
             }
+            if (owned) display_owner_release();
         }
         xSemaphoreGive(s_panel_lock);
         stack_monitor_poll(&stack);
@@ -523,6 +557,8 @@ void led_status_draw_begin(void) {
     xSemaphoreTake(s_lock, portMAX_DELAY);
     s_image_mode = true;
     s_gray4_mode = false;
+    s_gray16_mode = false;
+    s_partial_mode = false;
     s_status_drawn = false;
     s_image_dirty = false;
     memset(s_canvas, 255, s_canvas_bytes);
@@ -534,9 +570,57 @@ void led_status_draw_begin_gray4(void) {
     xSemaphoreTake(s_lock, portMAX_DELAY);
     s_image_mode = true;
     s_gray4_mode = true;
+    s_gray16_mode = false;
+    s_partial_mode = false;
     s_status_drawn = false;
     s_image_dirty = false;
     memset(s_canvas, 255, s_canvas_bytes);
+    xSemaphoreGive(s_lock);
+}
+
+void led_status_draw_begin_gray16(void) {
+    if (!s_ready || !s_panel->update_gray16) return;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    s_image_mode = true;
+    s_gray4_mode = false;
+    s_gray16_mode = true;
+    s_partial_mode = false;
+    s_status_drawn = false;
+    s_image_dirty = false;
+    memset(s_canvas, 255, s_canvas_bytes);
+    xSemaphoreGive(s_lock);
+}
+
+bool led_status_draw_begin_partial(int x, int y, int w, int h) {
+    if (!s_ready || !s_panel->update_partial || !s_partial_ready
+        || x < 0 || y < 0 || w <= 0 || h <= 0
+        || (x & 15) || (w & 15) || x + w > EPD_W || y + h > EPD_H) return false;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    // The canvas still holds the last displayed image; never clear outside the window.
+    s_image_mode = true;
+    s_gray4_mode = false;
+    s_gray16_mode = false;
+    s_partial_mode = true;
+    s_partial_x = x; s_partial_y = y; s_partial_w = w; s_partial_h = h;
+    s_status_drawn = false;
+    s_image_dirty = false;
+    xSemaphoreGive(s_lock);
+    return true;
+}
+
+void led_status_draw_cancel_partial(void) {
+    if (!s_ready) return;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    if (s_partial_mode && s_shown) {
+        for (int y = s_partial_y; y < s_partial_y + s_partial_h; ++y) {
+            for (int x = s_partial_x; x < s_partial_x + s_partial_w; ++x) {
+                uint8_t bits = s_shown[(size_t)y * EPD_ROW_BYTES + x / 8];
+                s_canvas[(size_t)y * EPD_W + x] = (bits & (0x80 >> (x & 7))) ? 255 : 0;
+            }
+        }
+        s_image_dirty = false;
+        s_partial_mode = false;
+    }
     xSemaphoreGive(s_lock);
 }
 
@@ -574,26 +658,51 @@ bool led_status_draw_done(void) {
     xSemaphoreTake(s_lock, portMAX_DELAY);
     bool show = s_image_mode && s_image_dirty;
     bool gray4 = s_gray4_mode;
+    bool gray16 = s_gray16_mode;
+    bool partial = s_partial_mode;
     esp_err_t err = ESP_OK;
     if (show) {
         s_image_dirty = false;
-        epd_dither();
+        if (!gray16) epd_dither();
     }
     xSemaphoreGive(s_lock);
     if (show) {
-        if (gray4) err = s_panel->update_gray4_planes(s_gray_old, s_frame);
+        bool owned = display_owner_acquire();
+#if CONFIG_HOMEHUB_LED_BACKEND_RETERMINAL_IT8951
+        bool partial_full = partial && s_partial_updates >= FULL_REFRESH_EVERY - 1;
+#endif
+        if (!owned) err = ESP_ERR_INVALID_STATE;
+        else if (gray16) err = s_panel->update_gray16(s_canvas);
+        else if (gray4) err = s_panel->update_gray4_planes(s_gray_old, s_frame);
         else if (s_panel->update_gray4) err = s_panel->update_gray4(s_gray4_frame);
+        else if (partial && s_partial_updates < FULL_REFRESH_EVERY - 1)
+            err = s_panel->update_partial(s_frame, s_partial_x, s_partial_y,
+                                          s_partial_w, s_partial_h);
         else err = s_panel->update(s_frame, s_shown, true);
+#if CONFIG_HOMEHUB_LED_BACKEND_RETERMINAL_IT8951
+        if (partial && err == ESP_OK)
+            ESP_LOGI(TAG, "IT8951 partial request %u/10: %s refresh",
+                     s_partial_updates + 1, partial_full ? "full" : "partial");
+#endif
         if (err == ESP_OK && s_shown) {
-            if (gray4) {
+            if (gray4 || gray16) {
                 memset(s_shown, 255, EPD_FRAME_BYTES);
                 s_fast_refreshes = FULL_REFRESH_EVERY;
+                if (gray16) s_partial_ready = false;
+                s_partial_updates = 0;
             } else if (!s_panel->update_gray4) {
                 memcpy(s_shown, s_frame, EPD_FRAME_BYTES);
+                if (partial) s_partial_updates = (s_partial_updates + 1) % FULL_REFRESH_EVERY;
+                else {
+                    s_partial_ready = true;
+                    s_partial_updates = 0;
+                }
             }
         }
+        if (owned) display_owner_release();
     }
     xSemaphoreGive(s_panel_lock);
+    if (show) s_partial_mode = false;
     return err == ESP_OK;
 }
 

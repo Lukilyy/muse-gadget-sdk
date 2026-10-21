@@ -55,6 +55,11 @@ int led_status_display_bits(void);
 void led_status_draw_begin(void);
 // E1001 only: replace the image using four physical gray levels.
 void led_status_draw_begin_gray4(void);
+// E1003 only: replace the image with 16 physical gray levels.
+void led_status_draw_begin_gray16(void);
+// E1003 only: retain the current image and update a 16-pixel-aligned region.
+bool led_status_draw_begin_partial(int x, int y, int w, int h);
+void led_status_draw_cancel_partial(void);
 // Draw w x h pixels at (x, y). `pixels` holds RGB565, 2 bytes each with the
 // high byte first, left to right and top to bottom; at most 23 full rows'
 // worth per call. The first call replaces the animation and title until

@@ -20,6 +20,14 @@
 
 #include <stddef.h>
 
+static bool (*s_activity_begin)(void);
+static void (*s_activity_end)(void);
+
+void ota_set_activity_hooks(bool (*begin)(void), void (*end)(void)) {
+    s_activity_begin = begin && end ? begin : NULL;
+    s_activity_end = begin && end ? end : NULL;
+}
+
 bool ota_is_enabled(void) {
 #if CONFIG_HOMEHUB_OTA_ENABLED
     return true;
@@ -56,6 +64,7 @@ typedef struct {
     bool force;
     ota_status_cb cb;
     void *user;
+    void (*activity_end)(void);
 } ota_ctx_t;
 
 // Parse a leading "[v]MAJOR.MINOR.PATCH" into three components. Non-numeric
@@ -247,6 +256,7 @@ static void ota_task(void *arg) {
     esp_restart();
 
 done:
+    if (ctx->activity_end) ctx->activity_end();
     free(ctx->url);
     free(ctx);
     stack_monitor_record(NULL);
@@ -272,9 +282,21 @@ void ota_start(const char *url, bool force, ota_status_cb cb, void *user) {
         }
         return;
     }
+    if (s_activity_begin && !s_activity_begin()) {
+        if (cb) {
+            ota_event_t ev = {.result = OTA_RESULT_FAILED,
+                              .detail = "power transition in progress"};
+            cb(&ev, user);
+        }
+        free(ctx->url);
+        free(ctx);
+        return;
+    }
+    ctx->activity_end = s_activity_begin ? s_activity_end : NULL;
     // 8 KB stack: TLS handshake + flash writes during the OTA download.
     if (xTaskCreate(ota_task, "ota", 16384, ctx, 5, NULL) != pdPASS) {
         ESP_LOGE(TAG, "could not start OTA task");
+        if (ctx->activity_end) ctx->activity_end();
         free(ctx->url);
         free(ctx);
         if (cb) {
