@@ -71,7 +71,11 @@ static const char *TAG = "link.image";
 #define FETCH_TIMEOUT_MS    10000
 #define FETCH_DEADLINE_MS   60000
 #define FETCH_MAX_REDIRECTS 3
-// VM replies are bounded to one Noise frame and consumed before the next Range.
+// A file from the VM is read in Range requests of at most
+// noise_ctrl_req_max_body() bytes into one buffer, each sent once the last is
+// drawn: the daemon may send a reply in one frame, which must fit the session's
+// receive buffers, and the session can't be paused while a slow screen catches
+// up. The buffer goes in PSRAM where there is some.
 #if CONFIG_SPIRAM
 #define VM_CAPS             (MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)
 #else
@@ -79,8 +83,15 @@ static const char *TAG = "link.image";
 #endif
 #define VM_POLL_MS          20
 #define VM_PATH_PREFIX      "/fs/raw/"
+// Smaller ranges cost round trips: only shrink without PSRAM when the maximum
+// will not fit, and refuse rather than going below this.
 #define VM_MIN_CHUNK        (2 * 1024)
+// Leave room for the range allocation's heap header, alignment and optional
+// poisoning canaries; otherwise a range sized to all available bytes fails
+// the post-allocation check by its own allocator overhead.
 #define VM_CHUNK_ALLOC_BYTES 32
+// The GET verb, Range header and separators in noise_ctrl_req_open's copy,
+// beyond the path. Enough for two unsigned 32-bit offsets in the header.
 #define VM_REQUEST_BYTES    64
 // Raw RGB565 is read and drawn this many rows at a time.
 #define RAW_ROWS            4
@@ -90,7 +101,7 @@ static const char *TAG = "link.image";
 #define JPEG_MCU_PIXELS     (16 * 16)
 
 typedef struct {
-    char *url;  // HTTP URL or encoded VM request path
+    char *url;  // or, for a file from the VM, the request path
     bool vm;
     int row;
     image_fetch_done_cb done;
@@ -107,6 +118,8 @@ typedef struct {
     bool partial_unavailable;
     int partial_x, partial_y, partial_w, partial_h;
     int64_t deadline_us;
+    // A file from the VM: the buffer for one range, what is in it, and where
+    // the next range starts.
     uint8_t *body;
     size_t chunk, body_len, body_pos;
     size_t next_offset;
@@ -535,6 +548,8 @@ static esp_err_t open_following_redirects(fetch_t *f, int *status) {
     }
 }
 
+// Opens the URL, following redirects, ready to read the body. False with
+// result->message set if it can't.
 static bool http_open(fetch_t *f, image_fetch_result_t *result, char *msg, size_t msg_len) {
     esp_http_client_config_t cfg = {
         .url = f->url,

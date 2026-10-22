@@ -63,8 +63,11 @@ typedef void (*image_fetch_done_cb)(const image_fetch_result_t *result, void *us
 bool image_fetch_start(const char *url, int row, image_fetch_done_cb done,
                        void *user, const char **code, const char **message);
 
-// Draw a file on the connected VM through bounded Noise Range requests.
-// Shares the download limit and ordinary display mode with draw_url.
+// The same for a file on the VM, fetched with GET /fs/raw/<path> over the
+// Noise session rather than from the internet, in Range requests small enough
+// that no reply overflows the session's buffers. Each range is drawn before
+// the next is asked for. Shares the one-download limit with
+// image_fetch_start.
 bool image_fetch_start_vm(const char *path, int row, image_fetch_done_cb done,
                           void *user, const char **code, const char **message);
 // E1001 only: the same input formats, rendered with its physical four-gray waveform.

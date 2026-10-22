@@ -80,7 +80,8 @@ static char s_noise_host[256] = NOISE_DEFAULT_HOST;
 #else
 #define SHOW_AGENT_NAME 0
 #endif
-// Extra VM requests serve Muse chat and display.draw_file on Link displays.
+// Extra daemon requests (noise_ctrl_req_*): Muse's chat, and display.draw_file
+// reading an image from the VM.
 #if CONFIG_MUSE_ENABLED || CONFIG_HOMEHUB_DISPLAY_COMMANDS
 #define NOISE_REQUESTS 1
 #else
@@ -116,7 +117,9 @@ static char s_noise_host[256] = NOISE_DEFAULT_HOST;
 // without PSRAM. Reserve enough inbound space for those frames. Not on the
 // ESP32-C3 AI Passport: three 17 KB buffers beside its UI leave too little to
 // upload a voice note. It takes 12 KB, as Link boards without PSRAM do.
-// PSRAM boards accept the protocol's largest frame for draw_file Range replies.
+// With PSRAM it is the protocol's largest frame, as Muse's chat session uses,
+// so extra requests (display.draw_file) can take large replies in few frames;
+// the two buffers cost 104 KB of PSRAM more than 12 KB ones.
 // Chat events arrive one per frame; a frame over that ends the session (it
 // can't be skipped: Noise's nonces and the ordered framer would desync), the
 // request in flight ends with NOISE_CTRL_REQ_TOO_LARGE, and the session
@@ -1020,7 +1023,8 @@ static bool tunnel_send_body_inplace(void *vctx, uint8_t *buf, size_t headroom,
 
 // ---- Extra daemon requests (noise_ctrl_req_*) --------------------------------
 
-// Muse and display.draw_file open these; other gateways get the stubs below.
+// Only Muse and display.draw_file open these; other Link-only gateways get the
+// empty stubs below.
 #if NOISE_REQUESTS
 
 // Stream ids from here up belong to these requests; lower ids are Link's own.
@@ -1322,18 +1326,19 @@ static cJSON *string_param(const char *description) {
 }
 
 #if CONFIG_HOMEHUB_DISPLAY_COMMANDS
+// The optional `row` of display.draw_url and display.draw_file.
 static cJSON *row_params(void) {
     cJSON *optional = cJSON_CreateObject();
-    cJSON *row = cJSON_CreateObject();
-    cJSON_AddStringToObject(row, "type", "integer");
-    cJSON_AddStringToObject(row, "description",
+    cJSON *top_param = cJSON_CreateObject();
+    cJSON_AddStringToObject(top_param, "type", "integer");
+    cJSON_AddStringToObject(top_param, "description",
 #if CONFIG_HOMEHUB_LED_BACKEND_MUSE
                             "Row to draw the top of the image at; by default a JPEG "
                             "is centred down the screen and raw data starts at 0.");
 #else
                             "Row to draw the top of the image at; default 0.");
 #endif
-    cJSON_AddItemToObject(optional, "row", row);
+    cJSON_AddItemToObject(optional, "row", top_param);
     return optional;
 }
 #endif
@@ -1534,7 +1539,8 @@ static char *build_register_json(void) {
                     "display.draw_url, with the same image formats and screen, "
                     "but takes a path on the VM instead of a URL: the device "
                     "reads the file over its connection to the VM, so the file "
-                    "need not be on the internet. Replies when the image is drawn.",
+                    "need not be on the internet. Replies when the image is "
+                    "drawn.",
                     path_required, row_params());
         cJSON_AddNumberToObject(
             cJSON_GetObjectItem(commands, "display.draw_file"), "timeout_ms",
@@ -2396,10 +2402,10 @@ static session_result_t run_session(stack_monitor_t *stack) {
             // wrap_result_json consumes the result tree. Retain its output
             // directly; there is no second whole-message allocation/copy.
             char *json = wrap_result_json(pr.request_id, pr.result);
+            free(pr.request_id);
             if (json) {
                 control_tx = {json, strlen(json), 0, false, session_generation};
             }
-            free(pr.request_id);
         }
         if (control_tx.json) {
             size_t old_offset = control_tx.json_offset;
@@ -2744,8 +2750,11 @@ extern "C" void noise_ctrl_req_cancel(int64_t id) {
     req_put(op, pdMS_TO_TICKS(100));
 }
 
-// Allow room for framing and response metadata in an inbound service frame.
+// What a reply frame leaves for its body in SVC_FRAME_SCRATCH, after the
+// framing and the response head (status and headers).
+#define REQ_FRAME_OVERHEAD 2048
+
 extern "C" size_t noise_ctrl_req_max_body(void) {
-    return SVC_FRAME_SCRATCH - 2048;
+    return SVC_FRAME_SCRATCH - REQ_FRAME_OVERHEAD;
 }
 #endif  // NOISE_REQUESTS

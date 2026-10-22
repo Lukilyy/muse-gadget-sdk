@@ -11,7 +11,6 @@ typedef enum {
     LINK_POWER_SD,
     LINK_POWER_MICROPHONE,
     LINK_POWER_PROVISIONING,
-    LINK_POWER_OTA,
     LINK_POWER_SETUP_CONTROL,
     LINK_POWER_BUZZER,
     LINK_POWER_OWNER_COUNT,
@@ -37,6 +36,8 @@ link_power_snapshot_t link_power_snapshot(void);
 // Online mode: ESP-IDF DFS + automatic Light Sleep. PM locks cover peripheral
 // work, never network waits.
 bool link_power_enable_online_pm(void);
+// Call after wifi_mgr_init(), which creates and starts the STA driver.
+bool link_power_enable_wifi_modem_sleep(void);
 bool link_power_pm_enter(link_pm_operation_t operation);
 void link_power_pm_leave(link_pm_operation_t operation);
 // Reads ESP-IDF's opt-in PM profiler only when explicitly queried. Returns

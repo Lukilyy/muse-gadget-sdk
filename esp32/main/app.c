@@ -2670,16 +2670,6 @@ static void *psram_malloc(size_t sz) {
     return p;
 }
 
-#if CONFIG_HOMEHUB_LED_BACKEND_RETERMINAL_UC8179 || CONFIG_HOMEHUB_LED_BACKEND_RETERMINAL_SPECTRA6 || CONFIG_HOMEHUB_LED_BACKEND_RETERMINAL_IT8951
-static bool e100x_ota_begin(void) {
-    return link_power_acquire(LINK_POWER_OTA);
-}
-
-static void e100x_ota_end(void) {
-    link_power_release(LINK_POWER_OTA);
-}
-#endif
-
 void app_run(void) {
     cJSON_Hooks hooks = { .malloc_fn = psram_malloc, .free_fn = free };
     cJSON_InitHooks(&hooks);
@@ -2737,7 +2727,6 @@ void app_run(void) {
 #if CONFIG_HOMEHUB_LED_BACKEND_RETERMINAL_UC8179 || CONFIG_HOMEHUB_LED_BACKEND_RETERMINAL_SPECTRA6 || CONFIG_HOMEHUB_LED_BACKEND_RETERMINAL_IT8951
     link_power_init();
     link_power_enable_online_pm();
-    ota_set_activity_hooks(e100x_ota_begin, e100x_ota_end);
 #endif
 #if CONFIG_HOMEHUB_RETERMINAL_E100X_HARDWARE
     reterminal_e100x_prepare_display();
@@ -2757,7 +2746,7 @@ void app_run(void) {
 
     wifi_mgr_init();
 #if CONFIG_HOMEHUB_LED_BACKEND_RETERMINAL_UC8179 || CONFIG_HOMEHUB_LED_BACKEND_RETERMINAL_SPECTRA6 || CONFIG_HOMEHUB_LED_BACKEND_RETERMINAL_IT8951
-    if (!wifi_mgr_set_online_power_save(true))
+    if (!link_power_enable_wifi_modem_sleep())
         ESP_LOGW(TAG, "E100x Wi-Fi modem sleep unavailable");
 #endif
     heap_snapshot("after wifi_mgr_init");

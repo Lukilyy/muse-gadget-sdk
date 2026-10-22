@@ -8,6 +8,7 @@
 #include "sdkconfig.h"
 #include "esp_err.h"
 #include "esp_log.h"
+#include "esp_wifi.h"
 #if CONFIG_PM_ENABLE
 #include "esp_pm.h"
 #endif
@@ -20,6 +21,15 @@ static const char *const TAG = "link.power";
 static esp_pm_lock_handle_t s_pm_locks[LINK_PM_LOCK_COUNT];
 static bool s_online_pm_ready;
 #endif
+
+bool link_power_enable_wifi_modem_sleep(void) {
+    esp_err_t err = esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Wi-Fi online power save unavailable: %s", esp_err_to_name(err));
+        return false;
+    }
+    return true;
+}
 
 bool link_power_enable_online_pm(void) {
 #if CONFIG_PM_ENABLE && CONFIG_FREERTOS_USE_TICKLESS_IDLE

@@ -39,12 +39,6 @@ typedef void (*ota_status_cb)(const ota_event_t *ev, void *user);
 // Whether this build accepts OTA updates (CONFIG_HOMEHUB_OTA_ENABLED).
 bool ota_is_enabled(void);
 
-// Optional board-neutral lifetime guard for an OTA attempt. Registered once
-// during startup; callers through BLE and Noise share the same protection.
-// begin runs before the worker starts; end runs on failure/skip. A successful
-// install reboots while the guard is still held.
-void ota_set_activity_hooks(bool (*begin)(void), void (*end)(void));
-
 // Download a firmware image from `url` (HTTPS) with the streaming esp_https_ota
 // API. The incoming image's embedded descriptor is read first: unless `force`
 // is set, the install is skipped when the image's version is not newer than the
