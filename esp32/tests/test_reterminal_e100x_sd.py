@@ -14,12 +14,9 @@ class E100xSdTest(unittest.TestCase):
     def test_binary_roundtrip_and_paths(self):
         for model in (2,3):
             with self.subTest(model=model): self.check_model(model)
-            baseline = os.environ.get("E100X_COMPARE_BASELINE")
-            if baseline:
-                with self.subTest(model=model, baseline=True): self.check_model(model, baseline)
 
 
-    def check_model(self, model, baseline=None):
+    def check_model(self, model):
         with tempfile.TemporaryDirectory() as directory:
             out = Path(directory)
             (out / "sdcard").mkdir()
@@ -93,12 +90,6 @@ int esp_vfs_fat_sdcard_unmount(const char *,sdmmc_card_t *);
             if not (out / "sdkconfig.h").exists():
                 (out / "sdkconfig.h").write_text("#pragma once\n#define CONFIG_HOMEHUB_LED_BACKEND_RETERMINAL_SPECTRA6 1\n")
             (out / "sdkconfig.h").write_text(f"#pragma once\n#define CONFIG_HOMEHUB_LED_BACKEND_RETERMINAL_SPECTRA6 {int(model==2)}\n#define CONFIG_HOMEHUB_LED_BACKEND_RETERMINAL_IT8951 {int(model==3)}\n")
-            if baseline:
-                old = (Path(baseline) / "esp32/main/e1002_sd.c").read_text(encoding="utf-8")
-                old = old.replace("e1002_sd", "reterminal_e100x_sd").replace("e1002_events", "reterminal_e100x_events")
-                old = old.replace("e1002_reply.h", "reterminal_e100x.h").replace("e1002_data_reply", "reterminal_e100x_data_reply")
-                old = old.replace("e1003_spi.h", "reterminal_e100x_board.h").replace("e1003_spi_", "reterminal_e100x_spi_")
-                (out / "reterminal_e100x_sd.c").write_text(old)
             cc = shlex.split(os.environ.get("CC", "gcc"))
             exe = out / "sd.exe"
             result = subprocess.run([*cc, "-std=c11", "-Wall", "-Wextra", "-Werror",

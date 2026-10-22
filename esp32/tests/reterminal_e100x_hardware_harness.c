@@ -9,6 +9,17 @@
 #include "esp_wifi.h"
 #include "link_power.h"
 
+#if CONFIG_HOMEHUB_LED_BACKEND_RETERMINAL_IT8951
+_Static_assert(RETERMINAL_E100X_BOARD_ID == 3, "E1003 profile");
+_Static_assert(E100X_SD_ENABLE_GPIO == 39, "E1003 SD power");
+_Static_assert(E100X_BATTERY_ENABLE_GPIO == 40, "E1003 battery enable");
+#else
+_Static_assert(RETERMINAL_E100X_BOARD_ID == (CONFIG_HOMEHUB_LED_BACKEND_RETERMINAL_UC8179 ? 1 : 2),
+               "E1001/E1002 profile");
+_Static_assert(E100X_SD_ENABLE_GPIO == 16, "E1001/E1002 SD power");
+_Static_assert(E100X_BATTERY_ENABLE_GPIO == 21, "E1001/E1002 battery enable");
+#endif
+
 void check_registration(void);
 void check_hardware_wire(cJSON *result);
 static TaskFunction_t s_task;

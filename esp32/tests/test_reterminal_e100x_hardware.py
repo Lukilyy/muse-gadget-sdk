@@ -13,34 +13,6 @@ JSON = Path(os.environ.get("CJSON_SOURCE_DIR", ROOT / "managed_components/espres
 
 
 class E100xHardwareTest(unittest.TestCase):
-    def test_disabled_features_keep_board_identity(self):
-        cc = shlex.split(os.environ.get("CC", "gcc"))
-        for model in (1, 2, 3):
-            with self.subTest(model=model), tempfile.TemporaryDirectory() as directory:
-                out = Path(directory)
-                (out / "driver").mkdir()
-                (out / "driver/i2c_master.h").write_text("typedef void *i2c_master_bus_handle_t;\n")
-                (out / "sdkconfig.h").write_text(
-                    "#pragma once\n#define CONFIG_HOMEHUB_RETERMINAL_E100X_HARDWARE 0\n"
-                    "#define CONFIG_HOMEHUB_RETERMINAL_E1003_INPUT 0\n"
-                    "#define CONFIG_HOMEHUB_RETERMINAL_E1003_HARDWARE 0\n"
-                    f"#define CONFIG_HOMEHUB_LED_BACKEND_RETERMINAL_UC8179 {int(model==1)}\n"
-                    f"#define CONFIG_HOMEHUB_LED_BACKEND_RETERMINAL_SPECTRA6 {int(model==2)}\n"
-                    f"#define CONFIG_HOMEHUB_LED_BACKEND_RETERMINAL_IT8951 {int(model==3)}\n")
-                (out / "identity.c").write_text(
-                    '#include "reterminal_e100x.h"\n#include "reterminal_e100x_board.h"\n'
-                    '_Static_assert(!RETERMINAL_E100X_INPUT_ENABLED, "input disabled");\n'
-                    '_Static_assert(!RETERMINAL_E100X_HARDWARE_ENABLED, "hardware disabled");\n'
-                    f'_Static_assert(RETERMINAL_E100X_BOARD_ID=={model}, "board identity");\n'
-                    f'_Static_assert(E100X_SD_ENABLE_GPIO=={39 if model==3 else 16}, "SD supply");\n'
-                    f'_Static_assert(E100X_BATTERY_ENABLE_GPIO=={40 if model==3 else 21}, "battery enable");\n'
-                    'int main(void) { return 0; }\n')
-                r = subprocess.run([*cc, "-std=c11", "-Wall", "-Wextra", "-Werror",
-                                    "-I", str(out), "-I", str(JSON), "-I", str(ROOT / "main"),
-                                    str(out / "identity.c"), "-o", str(out / "identity.exe")],
-                                   capture_output=True, text=True)
-                self.assertEqual(r.returncode, 0, r.stdout+r.stderr)
-
     def test_commands_and_registration(self):
         for board, inputs, hardware in [(1,1,1),(2,1,1),(3,1,1),(3,1,0),(3,0,1)]:
             with self.subTest(board=board, inputs=inputs, hardware=hardware):
