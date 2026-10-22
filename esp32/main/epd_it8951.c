@@ -343,7 +343,8 @@ static esp_err_t it8951_update_gray16(const uint8_t *luma) {
 
 static esp_err_t it8951_update_partial(const uint8_t *frame, int x, int y, int w, int h) {
     if (!frame || !s_spi || x < 0 || y < 0 || w <= 0 || h <= 0 || (x & 15)
-        || (w & 15) || x + w > PANEL_W || y + h > PANEL_H)
+        || (w & 15) || x >= PANEL_W || y >= PANEL_H
+        || w > PANEL_W - x || h > PANEL_H - y)
         return ESP_ERR_INVALID_ARG;
     if (!reterminal_e100x_spi_lock()) return ESP_ERR_INVALID_STATE;
     esp_err_t err = wait_refresh(false);

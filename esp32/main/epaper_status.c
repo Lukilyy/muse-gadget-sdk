@@ -594,7 +594,8 @@ void led_status_draw_begin_gray16(void) {
 bool led_status_draw_begin_partial(int x, int y, int w, int h) {
     if (!s_ready || !s_panel->update_partial || !s_partial_ready
         || x < 0 || y < 0 || w <= 0 || h <= 0
-        || (x & 15) || (w & 15) || x + w > EPD_W || y + h > EPD_H) return false;
+        || (x & 15) || (w & 15) || x >= EPD_W || y >= EPD_H
+        || w > EPD_W - x || h > EPD_H - y) return false;
     xSemaphoreTake(s_lock, portMAX_DELAY);
     // The canvas still holds the last displayed image; never clear outside the window.
     s_image_mode = true;
@@ -625,7 +626,8 @@ void led_status_draw_cancel_partial(void) {
 }
 
 bool led_status_draw_rect(int x, int y, int w, int h, const uint16_t *pixels) {
-    if (!s_ready || x < 0 || y < 0 || w <= 0 || h <= 0 || x + w > EPD_W || y + h > EPD_H) {
+    if (!s_ready || x < 0 || y < 0 || w <= 0 || h <= 0 || x >= EPD_W || y >= EPD_H
+        || w > EPD_W - x || h > EPD_H - y) {
         return false;
     }
     const uint8_t *src = (const uint8_t *)pixels;

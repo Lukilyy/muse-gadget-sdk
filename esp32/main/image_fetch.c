@@ -725,7 +725,7 @@ static bool image_fetch_start_mode(const char *target, bool vm, int row,
     }
 #endif
     if (partial && (x < 0 || y < 0 || w <= 0 || h <= 0 || (x & 15) || (w & 15)
-                    || x + w > width || y + h > height)) {
+                    || x >= width || y >= height || w > width - x || h > height - y)) {
         *code = "invalid_params";
         *message = "partial rectangle must fit and x/width must align to 16 pixels";
         return false;
