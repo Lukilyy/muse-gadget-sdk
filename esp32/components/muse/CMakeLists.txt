@@ -55,8 +55,10 @@ if(CONFIG_MUSE_ENABLED)
         list(APPEND srcs "muse_chat_link.c")   # text replies over Link's session
     endif()
     list(APPEND srcs "muse_chat_text.c")
-    if(CONFIG_MUSE_CJK_FONT)
-        list(APPEND srcs "fonts/muse_font_cjk_16.c")   # captions' CJK fallback
+    if(CONFIG_MUSE_CJK_FONT_NOTO)
+        list(APPEND srcs "fonts/muse_font_cjk_noto_16.c")   # captions' CJK fallback
+    elseif(CONFIG_MUSE_CJK_FONT)
+        list(APPEND srcs "fonts/muse_font_cjk_16.c")
     endif()
     # Your own character (tools/muse/AVATAR_RECIPE.md) stands in for the default
     # avatar when avatar/muse_pixel.c exists here; this avatar/ is gitignored. The
@@ -83,6 +85,8 @@ if(CONFIG_MUSE_ENABLED)
         list(APPEND srcs "boards/board_esp_mosaico.c" "boards/muse_lcd_bands.c")
     elseif(CONFIG_MUSE_BOARD_AIPI)
         list(APPEND srcs "boards/board_aipi.c")
+    elseif(CONFIG_MUSE_BOARD_ATK_DNESP32S3_BOX)
+        list(APPEND srcs "boards/board_atk_dnesp32s3_box.c")
     elseif(CONFIG_MUSE_BOARD_ESPRESSIF_BOX_3)
         list(APPEND srcs "boards/board_espressif_box_3.c" "boards/box_3_microphone.c")
     elseif(CONFIG_MUSE_BOARD_WAVESHARE_C6_18)
@@ -137,6 +141,9 @@ if(CONFIG_MUSE_ENABLED)
     # Watcher's independently retained recovery markers keep their link order.
     if(CONFIG_MUSE_POWER_TEST)
         list(APPEND srcs "muse_power_test.c")
+        if(CONFIG_MUSE_BOARD_WAVESHARE_S3_175C OR CONFIG_MUSE_BOARD_WAVESHARE_S3_216 OR CONFIG_MUSE_BOARD_AIPI)
+            list(APPEND srcs "boards/board_power_test_generic.c")
+        endif()
     endif()
 elseif(CONFIG_HOMEHUB_VOICE)
     # The Voice PE board uses just the Hatch voice session; the project's main/

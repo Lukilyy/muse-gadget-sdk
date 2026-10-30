@@ -51,6 +51,7 @@ before adding a feature to one.
 | ideaspark ESP32 + 1.9" ST7789 | `esp32` | `devices/sdkconfig.ideaspark` | `tools/board.sh ideaspark` |
 | Waveshare ESP32-C6-LCD-1.47 | `esp32c6` | `devices/sdkconfig.waveshare-c6-lcd-147` | `tools/board.sh waveshare-c6-lcd-147` |
 | Waveshare ESP32-S3-1.54inch-ePaper V2 | `esp32s3` | `devices/sdkconfig.waveshare-s3-epaper-154` | `tools/board.sh waveshare-s3-epaper-154` |
+| Waveshare ESP32-S3-ePaper-1.54G | `esp32s3` | `devices/sdkconfig.waveshare-s3-epaper-154g` | `tools/board.sh waveshare-s3-epaper-154g` |
 | Seeed SenseCAP Indicator | `esp32s3` | `devices/sdkconfig.sensecap-indicator` | `tools/board.sh sensecap-indicator` |
 | Seeed reTerminal E1001 | `esp32s3` | `devices/sdkconfig.reterminal-e1001` | `tools/board.sh reterminal-e1001` |
 | Seeed reTerminal E1002 | `esp32s3` | `devices/sdkconfig.reterminal-e1002` | `tools/board.sh reterminal-e1002` |
@@ -65,6 +66,7 @@ before adding a feature to one.
 | Espressif ESP-Mosaico (experimental; ESP-IDF master, see `devices/README.md`) | `esp32s31` | `devices/sdkconfig.muse;devices/sdkconfig.muse-esp-mosaico;devices/sdkconfig.muse-esp-mosaico-iris` | `tools/muse/board.sh build mosaico` |
 | OSTB EchoEar-2ST (experimental) | `esp32s3` | `devices/sdkconfig.muse;devices/sdkconfig.muse-ostb-echoear-2st` | `tools/muse/board.sh build echoear` |
 | Espressif ESP32-S3-BOX-3 | `esp32s3` | `devices/sdkconfig.muse;devices/sdkconfig.muse-espressif-box-3` | `tools/muse/board.sh build box3` |
+| ALIENTEK ATK-DNESP32S3-BOX V1.1 | `esp32s3` | `devices/sdkconfig.muse;devices/sdkconfig.muse-atk-dnesp32s3-box` | `tools/muse/board.sh build atk-box` |
 | AIPI Lite | `esp32s3` | `devices/sdkconfig.muse;devices/sdkconfig.muse-aipi` | manual |
 | Waveshare ESP32-C6-Touch-AMOLED-1.8 | `esp32c6` | `devices/sdkconfig.muse;devices/sdkconfig.muse-waveshare-c6-18` | manual |
 | Waveshare ESP32-C6-Touch-AMOLED-2.06 | `esp32c6` | `devices/sdkconfig.muse;devices/sdkconfig.muse-waveshare-c6-206` | `tools/muse/board.sh build c6-206` |
@@ -153,7 +155,7 @@ voice note that Muse answers in the app, and the dial sets the speaker volume
 
 ### Boards with the full UI, by hand
 
-`tools/muse/board.sh build|flash <s3|s3n|s3-216|aipi|box3|c6|c6-206|watcher|sticks3|plus2|cardputer-adv|stopwatch|xiao147|cores3|core2|jc3248w535|lcd7|lcd128|vn183|ai-passport|echoear> [SERIAL|PORT]`
+`tools/muse/board.sh build|flash <s3|s3n|s3-216|aipi|atk-box|box3|c6|c6-206|watcher|sticks3|plus2|cardputer-adv|stopwatch|xiao147|cores3|core2|jc3248w535|lcd7|lcd128|vn183|ai-passport|echoear> [SERIAL|PORT]`
 builds one board in `build-muse-<profile>/`, logs to
 `/tmp/muse_build_<board>.log`, and clears `managed_components/` before and
 after so it doesn't clash with other boards. When flashing, it finds the
@@ -381,12 +383,16 @@ python3 tools/muse/avatar.py --edit "CHANGE"    # change the one they have
 ```
 
 It checks the board, asks their Muse for the renderer through the board,
-saves it to `components/muse/avatar/muse_pixel.c` (gitignored), checks it on
-the host, then builds and flashes. Progress and errors go to stderr. Relay the
-line that starts with `Muse drew:` and the GIF paths. On failure, pass the
-message on. The exit status says what kind of failure it was:
+checks it on the host and builds the firmware with it in a copy of the tree,
+and only then saves it to `components/muse/avatar/muse_pixel.c` (gitignored)
+and flashes. It doesn't rebuild their own `build-muse-*/`: flashing that with
+`tools/muse/board.sh` before a `board.sh build` puts the previous avatar back.
+Progress and errors go to stderr. Relay the line that starts with `Muse drew:`
+and the GIF paths. On failure, pass the message on. The exit status says what
+kind of failure it was:
 
-- **2**: no board, or it can't do this. If it says the board doesn't answer,
+- **2**: no board, or it can't do this (or another `avatar.py` is still
+  running: let it finish). If it says the board doesn't answer,
   rerun with `--board s3` or `--board aipi` (from the board's name, or ask) to
   flash firmware that can. On the C6 boards or Watcher, follow the manual steps in
   `tools/muse/AVATAR_RECIPE.md`.
@@ -394,7 +400,10 @@ message on. The exit status says what kind of failure it was:
   no device token, so their Muse isn't connected. Tell them, and point them to
   the Muse app or `tools/muse/ble_setup.html`.
 - **1**: Muse's file still fails after two fix rounds, or the build or flash
-  failed. The previous avatar is in `muse_pixel.c.prev`, next to the new one.
+  failed. A file that fails a check or the build isn't saved: their avatar is
+  as it was. If only the flash failed, the new avatar is saved (the one before
+  is `muse_pixel.c.prev`) and its checked build stays in
+  `components/muse/avatar/firmware-BOARD/`; the error says how to flash it.
 
 Don't commit anything in `components/muse/avatar/`. To see what the board
 says, run `python3 tools/muse/chat.py --status`. To ask their Muse something,

@@ -47,8 +47,8 @@ void led_status_set_title(const char *title);
 // display.
 bool led_status_display_info(int *width, int *height);
 // Bits per pixel the screen shows: 16 for the RGB565 colour LCDs, 4 for
-// six-colour e-paper (the reTerminal E1002's Spectra 6), 1 for black and
-// white e-paper, 0 without a display.
+// six-colour e-paper (the reTerminal E1002's Spectra 6), 2 for four-colour or
+// four-gray e-paper, 1 for black and white e-paper, 0 without a display.
 int led_status_display_bits(void);
 // Start a replacement image. E-paper clears its in-memory canvas to white;
 // the panel refresh still happens once at led_status_draw_done().
